@@ -7,10 +7,13 @@ app = FastAPI()
 
 SECRET_PIN = "7777"
 
+# База данных районов с указанием продаж в USD, LTC и количеством проданных товаров
 CITIES_DB = [
-    {"city": "Кишинев", "district": "Центр", "sales": "$450"},
-    {"city": "Кишинев", "district": "Рышкановка", "sales": "$320"},
-    {"city": "Бельцы", "district": "БАМ", "sales": "$190"}
+    {"city": "Кишинев", "district": "Центр", "sales": "$450", "items": 34, "usd": 450, "ltc": 6.92},
+    {"city": "Кишинев", "district": "Рышкановка", "sales": "$320", "items": 24, "usd": 320, "ltc": 4.92},
+    {"city": "Бельцы", "district": "БАМ", "sales": "$190", "items": 15, "usd": 190, "ltc": 2.92},
+    {"city": "Кишинев", "district": "Ботаника", "sales": "$510", "items": 40, "usd": 510, "ltc": 7.84},
+    {"city": "Бельцы", "district": "Центр (Блц)", "sales": "$280", "items": 21, "usd": 280, "ltc": 4.30}
 ]
 
 BASE_TEMPLATE = """<!DOCTYPE html>
@@ -228,7 +231,7 @@ def get_page(content: str, title: str = "STELLA SYSTEM", show_intro: bool = Fals
             <button class="menu-btn" onclick="toggleSidebar()">☰</button>
             <div class="header-title" style="text-align: center;">
                 <h1>STELLA SYSTEM</h1>
-                <p>PANEL DASHBOARD</p>
+                <p>CONTROL SYSTEM</p>
             </div>
             <button class="theme-toggle" onclick="toggleTheme()">🌓</button>
         </div>
@@ -312,96 +315,89 @@ async def dashboard_get():
 
 @app.post("/add-district", response_class=HTMLResponse)
 async def add_district(city: str = Form(...), district_name: str = Form(...)):
-    CITIES_DB.append({"city": city, "district": district_name, "sales": "$80"})
+    CITIES_DB.append({"city": city, "district": district_name, "sales": "$100", "items": 10, "usd": 100, "ltc": 1.5})
     return await render_main_dashboard(intro=False)
 
 async def render_main_dashboard(intro: bool = True):
-    districts_html = "".join([f"""
-        <div style="display: flex; justify-content: space-between; align-items: center; background: var(--input-bg); padding: 8px 12px; border-radius: 8px; margin-bottom: 6px; border: 1px solid var(--input-border);">
-            <div>
-                <span style="font-size: 13px; font-weight: 600;">{d['district']}</span>
-                <span style="font-size: 11px; color: var(--text-muted); margin-left: 6px;">({d['city']})</span>
-            </div>
-            <span style="font-size: 13px; color: #38bdf8; font-weight: 600;">{d['sales']}</span>
-        </div>
-    """ for d in CITIES_DB])
-
-    # Выносим JS график в обычную строку, чтобы Python не ругался на синтаксис
     dashboard_content = """
         <div style="text-align:center; margin-bottom: 12px;">
-            <p style="color: #38bdf8; font-size: 11px; letter-spacing: 2px; font-weight: 600;">АНАЛИТИКА И РАЙОНЫ</p>
-            <h2 style="font-size: 18px; margin-top: 2px;">Статистика поступлений</h2>
+            <p style="color: #38bdf8; font-size: 11px; letter-spacing: 2px; font-weight: 600;">АНАЛИТИКА ПО РАЙОНАМ</p>
+            <h2 style="font-size: 18px; margin-top: 2px;">Продажи по локациям</h2>
         </div>
 
+        <!-- Карточки с динамическим отображением данных при клике на район -->
         <div style="display: flex; gap: 10px; margin-bottom: 14px;">
             <div style="flex: 1; background: var(--input-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 10px; text-align: center;">
-                <p style="font-size: 10px; color: var(--text-muted);">ОБЩИЙ БАЛАНС ($)</p>
-                <h3 id="stat-usd" style="font-size: 16px; color: #38bdf8; margin-top: 4px;">$3,290.00</h3>
+                <p style="font-size: 10px; color: var(--text-muted);" id="label-district">ВЫБРАННЫЙ РАЙОН</p>
+                <h3 id="stat-sales" style="font-size: 15px; color: #38bdf8; margin-top: 4px;">Все районы</h3>
             </div>
             <div style="flex: 1; background: var(--input-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 10px; text-align: center;">
-                <p style="font-size: 10px; color: var(--text-muted);">ОБЩИЙ БАЛАНС (LTC)</p>
-                <h3 id="stat-ltc" style="font-size: 16px; color: #4ade80; margin-top: 4px;">50.61 LTC</h3>
+                <p style="font-size: 10px; color: var(--text-muted);">КУПЛЕНО ТОВАРОВ</p>
+                <h3 id="stat-items" style="font-size: 16px; color: #4ade80; margin-top: 4px;">128 шт</h3>
             </div>
         </div>
 
+        <!-- График районов (столбцы вверх) -->
         <div style="background: var(--input-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 12px; margin-bottom: 14px;">
             <div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 8px;">
-                <span style="font-size: 11px; color: var(--text-muted);">Месяц: <b id="selected-month" style="color: #38bdf8;">Все</b></span>
-                <button onclick="toggleModal(true)" style="width: auto; padding: 4px 8px; font-size: 11px; background: #0284c7;">⚙️ Районы</button>
+                <span style="font-size: 11px; color: var(--text-muted);">Нажмите на столбец района:</span>
+                <button onclick="toggleModal(true)" style="width: auto; padding: 4px 8px; font-size: 11px; background: #0284c7;">⚙️ Добавить</button>
             </div>
-            <canvas id="incomeChart" style="max-height: 150px;"></canvas>
-        </div>
-
-        <div style="margin-bottom: 10px;">
-            <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 6px; font-weight: 600;">АКТИВНЫЕ РАЙОНЫ ПРОДАЖ:</p>
-            <div style="max-height: 110px; overflow-y: auto;">
-                __DISTRICTS__
-            </div>
+            <canvas id="districtChart" style="max-height: 160px;"></canvas>
         </div>
 
         <a href='/' class='logout' style='margin-top: 8px; text-decoration: none;'>Выйти</a>
 
         <script>
-            const monthlyData = [
-                { month: 'Июль', usd: 120, ltc: 1.85 },
-                { month: 'Авг', usd: 340, ltc: 5.23 },
-                { month: 'Сент', usd: 210, ltc: 3.10 },
-                { month: 'Окт', usd: 580, ltc: 8.92 },
-                { month: 'Нояб', usd: 890, ltc: 13.69 },
-                { month: 'Дек', usd: 1250, ltc: 19.23 }
-            ];
+            // Передаем список районов из Python в JS
+            const districtsData = __DISTRICTS_JSON__;
 
-            const ctx = document.getElementById('incomeChart').getContext('2d');
-            new Chart(ctx, {
-                type: 'line',
+            const ctx = document.getElementById('districtChart').getContext('2d');
+            const districtChart = new Chart(ctx, {
+                type: 'bar',
                 data: {
-                    labels: monthlyData.map(d => d.month),
+                    labels: districtsData.map(d => d.district),
                     datasets: [{
-                        data: monthlyData.map(d => d.usd),
+                        label: 'Продано товаров ($)',
+                        data: districtsData.map(d => d.usd),
+                        backgroundColor: 'rgba(56, 189, 248, 0.6)',
                         borderColor: '#38bdf8',
-                        backgroundColor: 'rgba(56, 189, 248, 0.15)',
-                        borderWidth: 2.5,
-                        pointBackgroundColor: '#ffffff',
-                        pointBorderColor: '#0284c7',
-                        pointRadius: 5,
-                        fill: true,
-                        tension: 0.35
+                        borderWidth: 1.5,
+                        borderRadius: 6,
+                        hoverBackgroundColor: '#38bdf8'
                     }]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    plugins: { legend: { display: false } },
+                    plugins: { 
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const item = districtsData[context.dataIndex];
+                                    return ` Выручка: $${item.usd} (${item.ltc} LTC) | Товаров: ${item.items} шт`;
+                                }
+                            }
+                        }
+                    },
                     scales: {
-                        x: { grid: { color: 'rgba(255, 255, 255, 0.05)' }, ticks: { color: '#94a3b8', font: { size: 10 } } },
-                        y: { grid: { color: 'rgba(255, 255, 255, 0.05)' }, ticks: { color: '#94a3b8', font: { size: 10 } } }
+                        x: { 
+                            grid: { display: false }, 
+                            ticks: { color: '#94a3b8', font: { size: 10 } } 
+                        },
+                        y: { 
+                            grid: { color: 'rgba(255, 255, 255, 0.05)' }, 
+                            ticks: { color: '#94a3b8', font: { size: 10 } } 
+                        }
                     },
                     onClick: (e, elements) => {
                         if (elements.length > 0) {
-                            const item = monthlyData[elements[0].index];
-                            document.getElementById('selected-month').innerText = item.month;
-                            document.getElementById('stat-usd').innerText = '$' + item.usd.toLocaleString();
-                            document.getElementById('stat-ltc').innerText = item.ltc.toFixed(2) + ' LTC';
+                            const index = elements[0].index;
+                            const item = districtsData[index];
+                            document.getElementById('label-district').innerText = item.district.toUpperCase();
+                            document.getElementById('stat-sales').innerText = '$' + item.usd + ' / ' + item.ltc + ' LTC';
+                            document.getElementById('stat-items').innerText = item.items + ' шт';
                         }
                     }
                 }
@@ -409,7 +405,9 @@ async def render_main_dashboard(intro: bool = True):
         </script>
     """
     
-    final_content = dashboard_content.replace("__DISTRICTS__", districts_html)
+    import json
+    districts_json = json.dumps(CITIES_DB, ensure_ascii=False)
+    final_content = dashboard_content.replace("__DISTRICTS_JSON__", districts_json)
     return get_page(final_content, "STELLA SYSTEM - DASHBOARD", show_intro=intro, show_full_nav=True)
 
 @app.post("/add-bot", response_class=HTMLResponse)
