@@ -1,114 +1,51 @@
-import asyncio
-import logging
-import uuid
-from aiogram import Bot, Dispatcher, F, Router
-from aiogram.filters import CommandStart
-from aiogram.types import (
-    CallbackQuery,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-    Message,
-)
+import os
+from fastapi import FastAPI, Form, Request
+from fastapi.responses import HTMLResponse
+import uvicorn
 
-# Вставь свой токен от BotFather вместо 'ТВОЙ_БОТ_ТОКЕН' в кавычках!
-BOT_TOKEN = "9066444400:AAHED7ZPbwpWRX07tkaMDM8v1nw-agfhPWA"
+app = FastAPI()
 
-logging.basicConfig(level=logging.INFO)
-router = Router()
+# Простая HTML-страница входа для админки, адаптированная под телефон
+LOGIN_PAGE = """
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SaaS Bot Admin</title>
+    <style>
+        body { font-family: sans-serif; background: #0f172a; color: #fff; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .card { background: #1e293b; padding: 20px; border-radius: 12px; width: 100%; max-width: 320px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
+        h2 { text-align: center; margin-bottom: 20px; font-size: 20px; }
+        input { width: 100%; padding: 12px; margin-bottom: 12px; border-radius: 6px; border: 1px solid #475569; background: #0f172a; color: #fff; box-sizing: border-box; }
+        button { width: 100%; padding: 12px; background: #3b82f6; border: none; border-radius: 6px; color: #fff; font-weight: bold; cursor: pointer; }
+        button:hover { background: #2563eb; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h2>Вход в админку</h2>
+        <form method="POST" action="/login">
+            <input type="text" name="username" placeholder="Логин" required>
+            <input type="password" name="password" placeholder="Пароль" required>
+            <button type="submit">Войти</button>
+        </form>
+    </div>
+</body>
+</html>
+"""
 
-USERS_DB = {}
-PRODUCTS = {
-    "1": {"name": "📂 Цифровой гайд / Товар #1", "price_ltc": 0.05},
-    "2": {"name": "🔑 Доступ к каналу / Товар #2", "price_ltc": 0.12},
-}
+@app.get("/", response_class=HTMLResponse)
+async def index():
+    return LOGIN_PAGE
 
-
-@router.message(CommandStart())
-async def cmd_start(message: Message):
-  keyboard = InlineKeyboardMarkup(
-      inline_keyboard=[
-          [
-              InlineKeyboardButton(
-                  text="🛍 Каталог товаров", callback_data="catalog"
-              )
-          ],
-          [InlineKeyboardButton(text="👤 Мой профиль", callback_data="profile")],
-      ]
-  )
-  await message.answer(
-      "👋 **Добро пожаловать в магазин!**\n\nВыбери нужный раздел в меню ниже:",
-      reply_markup=keyboard,
-      parse_mode="Markdown",
-  )
-
-
-@router.callback_query(F.data == "catalog")
-async def show_catalog(callback: CallbackQuery):
-  buttons = []
-  for p_id, p_info in PRODUCTS.items():
-    buttons.append([
-        InlineKeyboardButton(
-            text=f"{p_info['name']} — {p_info['price_ltc']} LTC",
-            callback_data=f"buy_{p_id}",
-        )
-    ])
-
-  buttons.append([InlineKeyboardButton(text="◀️ Назад", callback_data="back_home")])
-  keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
-
-  await callback.message.edit_text(
-      "📦 **Доступные товары:**\nНажми на товар для покупки:",
-      reply_markup=keyboard,
-      parse_mode="Markdown",
-  )
-  await callback.answer()
-
-
-@router.callback_query(F.data.startswith("buy_"))
-async def process_purchase(callback: CallbackQuery):
-  p_id = callback.data.split("_")[1]
-  product = PRODUCTS.get(p_id)
-
-  fake_ltc_address = "LTC1Q_DEMO_ADDRESS_EXAMPLE_XYZ12345"
-  order_id = str(uuid.uuid4())[:8]
-
-  text = (
-      f"🛒 **Оформление заказа #{order_id}**\n\n"
-      f"Товар: *{product['name']}*\n"
-      f"Сумма к оплате: `{product['price_ltc']} LTC`\n\n"
-      f"📌 **Адрес для оплаты (Litecoin):**\n`{fake_ltc_address}`\n\n"
-      "⚠️ *Переводите точную сумму. После подтверждения сети товар придет автоматически.*"
-  )
-
-  keyboard = InlineKeyboardMarkup(
-      inline_keyboard=[[
-          InlineKeyboardButton(
-              text="🔄 Проверить оплату", callback_data=f"check_{order_id}"
-          )
-      ], [InlineKeyboardButton(text="◀️ В каталог", callback_data="catalog")]]
-  )
-
-  await callback.message.edit_text(
-      text, reply_markup=keyboard, parse_mode="Markdown"
-  )
-  await callback.answer()
-
-
-@router.callback_query(F.data == "back_home")
-async def back_home(callback: CallbackQuery):
-  await cmd_start(callback.message)
-  await callback.answer()
-
-
-async def main():
-  bot = Bot(token=BOT_TOKEN)
-  dp = Dispatcher()
-  dp.include_router(router)
-
-  print("Бот запущен и готов к работе!")
-  await dp.start_polling(bot)
-
+@app.post("/login", response_class=HTMLResponse)
+async def login(username: str = Form(...), password: str = Form(...)):
+    # Тестовая проверка (потом заменим на базу данных)
+    if username == "admin" and password == "12345":
+        return "<h2>Добро пожаловать в твою панель управления! Вход выполнен успешно.</h2><a href='/'>Назад</a>"
+    return "<h2>Неверный логин или пароль!</h2><a href='/'>Попробовать снова</a>"
 
 if __name__ == "__main__":
-  asyncio.run(main())
-  
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
