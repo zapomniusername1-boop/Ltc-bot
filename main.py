@@ -7,9 +7,10 @@ app = FastAPI()
 
 SECRET_PIN = "7777"
 
-# Чистые базы данных (начинаем с пустых списков, чтобы пользователи сами всё добавляли)
+# Базы данных
 CITIES_DB = []
 DISTRICTS_DB = []
+BOT_CONFIG = {"name": "Не привязан", "token": ""}
 
 BASE_TEMPLATE = """<!DOCTYPE html>
 <html lang="ru">
@@ -244,6 +245,7 @@ def get_page(content: str, title: str = "STELLA SYSTEM", show_intro: bool = Fals
             </div>
             <div class="sidebar-menu">
                 <a href="/dashboard">📊 Статистика и Графика</a>
+                <a href="/bot-settings">🤖 Настройки бота</a>
                 <a href="/cities">🏙️ Управление городами</a>
                 <a href="/districts">📍 Управление районами</a>
                 <a href="/" style="color: #fca5a5;">🚪 Выход</a>
@@ -291,30 +293,58 @@ async def verify_pin_page(username: str = Form(...), password: str = Form(...)):
     """
     return get_page(content, "STELLA SYSTEM - PIN", show_intro=False, show_full_nav=False)
 
+# После ПИН-кода сразу переходим в дашборд с 3-секундной заставкой STELLA
 @app.post("/check-pin", response_class=HTMLResponse)
 async def check_pin(pin_code: str = Form(...)):
     if pin_code != SECRET_PIN:
         return RedirectResponse(url="/", status_code=303)
-    
-    content = """
-        <div style="text-align:center; margin-bottom: 16px;">
-            <p style="color: #4ade80; font-size: 13px; font-weight: 600;">✔ Доступ разрешен</p>
-            <h3 style="margin-top:6px; font-size:16px;">Подключение бота</h3>
-        </div>
-        <form method="POST" action="/add-bot">
-            <input type="text" name="bot_name" placeholder="Имя бота" required>
-            <input type="text" name="bot_token" placeholder="Токен бота от BotFather" required>
-            <button type="submit">Запустить бота</button>
-        </form>
-        <a href="/" class="logout">Выйти</a>
-    """
-    return get_page(content, "STELLA SYSTEM - PANEL", show_intro=False, show_full_nav=False)
+    return await render_main_dashboard(intro=True)
 
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard_get():
-    return await render_main_dashboard()
+    return await render_main_dashboard(intro=False)
 
-# ОТДЕЛЬНАЯ СТРАНИЦА УПРАВЛЕНИЯ ГОРОДАМИ
+# РАЗДЕЛ НАСТРОЙКИ БОТА
+@app.get("/bot-settings", response_class=HTMLResponse)
+async def bot_settings_page(status: str = None):
+    popup_script = ""
+    if status == "success":
+        popup_script = "<script>window.addEventListener('load', () => showPopup(true, 'Изменено'));</script>"
+    elif status == "error":
+        popup_script = "<script>window.addEventListener('load', () => showPopup(false, 'Ошибка'));</script>"
+
+    content = f"""
+        <div style="text-align:center; margin-bottom: 14px;">
+            <p style="color: #38bdf8; font-size: 11px; letter-spacing: 2px; font-weight: 600;">ИНТЕГРАЦИЯ</p>
+            <h2 style="font-size: 18px; margin-top: 2px;">Управление ботом</h2>
+        </div>
+
+        <div style="background: var(--input-bg); padding: 12px; border-radius: 12px; border: 1px solid var(--border-color); margin-bottom: 14px;">
+            <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">ТЕКУЩИЙ СТАТУС:</p>
+            <h3 style="font-size: 14px; color: #4ade80; margin-bottom: 10px;">🤖 {BOT_CONFIG['name']}</h3>
+        </div>
+
+        <form method="POST" action="/update-bot" style="background: var(--input-bg); padding: 12px; border-radius: 12px; border: 1px solid var(--border-color); margin-bottom: 16px;">
+            <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 8px; font-weight: 600;">⚙️ ПРИВЯЗАТЬ НОВОГО БОТА:</p>
+            <input type="text" name="bot_name" placeholder="Имя бота (например, @MyBot)" required style="margin-bottom: 8px;">
+            <input type="text" name="bot_token" placeholder="Токен от BotFather" required style="margin-bottom: 8px;">
+            <button type="submit">Сохранить и запустить</button>
+        </form>
+
+        <a href='/dashboard' class='logout' style='background: #0284c7; color: #fff; border: none; text-decoration: none;'>← В дашборд</a>
+        {popup_script}
+    """
+    return get_page(content, "STELLA SYSTEM - BOT SETTINGS", show_intro=False, show_full_nav=True)
+
+@app.post("/update-bot", response_class=HTMLResponse)
+async def update_bot(bot_name: str = Form(...), bot_token: str = Form(...)):
+    if bot_name and bot_token:
+        BOT_CONFIG["name"] = bot_name
+        BOT_CONFIG["token"] = bot_token
+        return RedirectResponse(url="/bot-settings?status=success", status_code=303)
+    return RedirectResponse(url="/bot-settings?status=error", status_code=303)
+
+# РАЗДЕЛ ГОРОДОВ
 @app.get("/cities", response_class=HTMLResponse)
 async def cities_page(status: str = None):
     list_html = "".join([f"""
@@ -360,18 +390,18 @@ async def add_city(city_name: str = Form(...)):
         return RedirectResponse(url="/cities?status=success", status_code=303)
     return RedirectResponse(url="/cities?status=error", status_code=303)
 
-# ОТДЕЛЬНАЯ СТРАНИЦА УПРАВЛЕНИЯ РАЙОНАМИ
+# РАЗДЕЛ РАЙОНОВ
 @app.get("/districts", response_class=HTMLResponse)
 async def districts_page(status: str = None):
     city_options = "".join([f'<option value="{c}">{c}</option>' for c in CITIES_DB])
     
     list_html = "".join([f"""
-        <div style="display: flex; justify-content: space-between; align-items: center; background: var(--input-bg); padding: 10px 12px; border-radius: 8px; margin-bottom: 8px; border: 1px solid var(--input-border);">
-            <div>
+        <div style="background: var(--input-bg); padding: 10px 12px; border-radius: 8px; margin-bottom: 8px; border: 1px solid var(--input-border);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
                 <span style="font-size: 13px; font-weight: 600;">{d['district']}</span>
-                <span style="font-size: 11px; color: var(--text-muted); display: block;">Город: {d['city']}</span>
+                <span style="font-size: 11px; color: var(--text-muted);">Город: {d['city']}</span>
             </div>
-            <span style="font-size: 12px; color: #38bdf8; font-weight: 600;">0 тов.</span>
+            <div style="font-size: 11px; color: #38bdf8; word-break: break-all;">🔗 Ссылка выдачи: <a href="{d['product_link']}" target="_blank" style="color: #38bdf8;">{d['product_link']}</a></div>
         </div>
     """ for d in DISTRICTS_DB]) if DISTRICTS_DB else '<p style="font-size: 11px; color: var(--text-muted); text-align: center;">Районы еще не добавлены</p>'
 
@@ -388,18 +418,19 @@ async def districts_page(status: str = None):
         </div>
 
         <form method="POST" action="/add-district" style="background: var(--input-bg); padding: 12px; border-radius: 12px; border: 1px solid var(--border-color); margin-bottom: 16px;">
-            <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 8px; font-weight: 600;">➕ ДОБАВИТЬ РАЙОН:</p>
+            <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 8px; font-weight: 600;">➕ ДОБАВИТЬ РАЙОН И ССЫЛКУ:</p>
             <select name="city" required style="margin-bottom: 8px;">
                 <option value="" disabled selected>Выберите город</option>
                 {city_options}
             </select>
             <input type="text" name="district_name" placeholder="Название района" required style="margin-bottom: 8px;">
+            <input type="url" name="product_link" placeholder="Ссылка на товар (выдача после оплаты)" required style="margin-bottom: 8px;">
             <button type="submit">Сохранить район</button>
         </form>
 
         <div style="margin-bottom: 14px;">
-            <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 6px; font-weight: 600;">СПИСОК РАЙОНОВ:</p>
-            <div style="max-height: 160px; overflow-y: auto;">
+            <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 6px; font-weight: 600;">СПИСОК РАЙОНОВ И ССЫЛОК:</p>
+            <div style="max-height: 180px; overflow-y: auto;">
                 {list_html}
             </div>
         </div>
@@ -410,24 +441,29 @@ async def districts_page(status: str = None):
     return get_page(content, "STELLA SYSTEM - DISTRICTS", show_intro=False, show_full_nav=True)
 
 @app.post("/add-district", response_class=HTMLResponse)
-async def add_district(city: str = Form(...), district_name: str = Form(...)):
-    if city and district_name:
-        DISTRICTS_DB.append({"city": city, "district": district_name, "items": 0, "usd": 0, "ltc": 0})
+async def add_district(city: str = Form(...), district_name: str = Form(...), product_link: str = Form(...)):
+    if city and district_name and product_link:
+        DISTRICTS_DB.append({"city": city, "district": district_name, "product_link": product_link, "items": 0, "usd": 0, "ltc": 0})
         return RedirectResponse(url="/districts?status=success", status_code=303)
     return RedirectResponse(url="/districts?status=error", status_code=303)
 
 async def render_main_dashboard(intro: bool = True):
-    # Данные для графиков берутся из реальной динамики или показуются пустыми, если ничего не добавлено
-    labels = [d['district'] for d in DISTRICTS_DB] if DISTRICTS_DB else ["Нет данных"]
+    labels = [d['district'] for d in DISTRICTS_DB] if DISTRICTS_DB else ["Нет районов"]
     items_data = [d['items'] for d in DISTRICTS_DB] if DISTRICTS_DB else [0]
 
-    dashboard_content = """
+    dashboard_content = f"""
         <div style="text-align:center; margin-bottom: 12px;">
             <p style="color: #38bdf8; font-size: 11px; letter-spacing: 2px; font-weight: 600;">АНАЛИТИКА СИСТЕМЫ</p>
             <h2 style="font-size: 18px; margin-top: 2px;">Доходы и Районы</h2>
         </div>
 
-        <!-- 1. График доходов по месяцам -->
+        <div style="background: var(--input-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 12px; margin-bottom: 12px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="font-size: 11px; color: var(--text-muted);">Активный бот:</span>
+                <span style="font-size: 12px; color: #4ade80; font-weight: 600;">🤖 {BOT_CONFIG['name']}</span>
+            </div>
+        </div>
+
         <div style="background: var(--input-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 12px; margin-bottom: 14px;">
             <div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 6px;">
                 <span style="font-size: 11px; color: var(--text-muted);">Доход по месяцам (USD / LTC):</span>
@@ -446,7 +482,6 @@ async def render_main_dashboard(intro: bool = True):
             <canvas id="incomeChart" style="max-height: 120px;"></canvas>
         </div>
 
-        <!-- 2. График районов -->
         <div style="background: var(--input-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 12px; margin-bottom: 14px;">
             <div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 6px;">
                 <span style="font-size: 11px; color: var(--text-muted);">Районы (товаров куплено):</span>
@@ -533,10 +568,6 @@ async def render_main_dashboard(intro: bool = True):
     
     final_content = dashboard_content.replace("__DISTRICTS_LABELS__", labels_json).replace("__DISTRICTS_ITEMS__", items_json)
     return get_page(final_content, "STELLA SYSTEM - DASHBOARD", show_intro=intro, show_full_nav=True)
-
-@app.post("/add-bot", response_class=HTMLResponse)
-async def add_bot(bot_name: str = Form(...), bot_token: str = Form(...)):
-    return await render_main_dashboard(intro=True)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
