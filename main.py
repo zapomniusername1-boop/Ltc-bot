@@ -143,7 +143,6 @@ BASE_TEMPLATE = """<!DOCTYPE html>
             padding: 11px; border-radius: 10px; color: #fca5a5; font-weight: 600; font-size: 14px;
         }
 
-        /* Всплывающее белое окно уведомления */
         #status-popup {
             display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(5, 8, 19, 0.7); z-index: 3000; justify-content: center; align-items: center;
@@ -250,7 +249,7 @@ def get_page(content: str, title: str = "STELLA SYSTEM", show_intro: bool = Fals
                 <a href="/cities">🏙️ Управление городами</a>
                 <a href="/districts">📍 Управление районами</a>
                 <a href="/categories">📂 Категории</a>
-                <a href="/products">📦 Товары и ссылки</a>
+                <a href="/products">📦 Товары и выдача</a>
                 <a href="/" style="color: #fca5a5;">🚪 Выход</a>
             </div>
         </div>
@@ -427,7 +426,7 @@ async def districts_page(status: str = None):
 
         <div style="margin-bottom: 14px;">
             <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 6px; font-weight: 600;">СПИСОК РАЙОНОВ:</p>
-            <div style="max-height: 180px; overflow-y: auto;">
+            <div style="max-height: 160px; overflow-y: auto;">
                 {list_html}
             </div>
         </div>
@@ -444,7 +443,6 @@ async def add_district(city: str = Form(...), district_name: str = Form(...)):
         return RedirectResponse(url="/districts?status=success", status_code=303)
     return RedirectResponse(url="/districts?status=error", status_code=303)
 
-# РАЗДЕЛ КАГОРИЙ
 @app.get("/categories", response_class=HTMLResponse)
 async def categories_page(status: str = None):
     list_html = "".join([f"""
@@ -490,7 +488,7 @@ async def add_category(category_name: str = Form(...)):
         return RedirectResponse(url="/categories?status=success", status_code=303)
     return RedirectResponse(url="/categories?status=error", status_code=303)
 
-# РАЗДЕЛ ТОВАРОВ И ССЫЛОК ВЫДАЧИ
+# РАЗДЕЛ ТОВАРОВ (С ПОДДЕРЖКОЙ ФОТО ИЛИ ССЫЛКИ ВЫДАЧИ)
 @app.get("/products", response_class=HTMLResponse)
 async def products_page(status: str = None):
     cat_options = "".join([f'<option value="{c}">{c}</option>' for c in CATEGORIES_DB])
@@ -503,8 +501,9 @@ async def products_page(status: str = None):
                 <span style="font-size: 13px; font-weight: 600;">📦 {p['name']}</span>
                 <span style="font-size: 11px; color: #38bdf8;">${p['price']}</span>
             </div>
-            <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Категория: {p['category']} | Район: {p['district']} ({p['city']})</div>
-            <div style="font-size: 11px; color: #4ade80; word-break: break-all;">🔗 Ссылка выдачи: <a href="{p['product_link']}" target="_blank" style="color: #4ade80;">{p['product_link']}</a></div>
+            <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Район: {p['district']} ({p['city']})</div>
+            {"<div style='font-size: 11px; color: #4ade80; word-break: break-all;'>🔗 Ссылка: <a href='" + p['product_link'] + "' target='_blank' style='color: #4ade80;'>Перейти</a></div>" if p['product_link'] else ""}
+            {"<div style='font-size: 11px; color: #38bdf8; word-break: break-all;'>🖼️ Фото: <a href='" + p['photo_link'] + "' target='_blank' style='color: #38bdf8;'>Смотреть</a></div>" if p['photo_link'] else ""}
         </div>
     """ for p in PRODUCTS_DB]) if PRODUCTS_DB else '<p style="font-size: 11px; color: var(--text-muted); text-align: center;">Товары еще не добавлены</p>'
 
@@ -512,12 +511,12 @@ async def products_page(status: str = None):
     if status == "success":
         popup_script = "<script>window.addEventListener('load', () => showPopup(true, 'Изменено'));</script>"
     elif status == "error":
-        popup_script = "<script>window.addEventListener('load', () => showPopup(false, 'Ошибка'));</script>"
+        popup_script = "<script>window.addEventListener('load', () => showPopup(false, 'Укажите ссылку или фото'));</script>"
 
     content = f"""
         <div style="text-align:center; margin-bottom: 14px;">
             <p style="color: #38bdf8; font-size: 11px; letter-spacing: 2px; font-weight: 600;">КАТАЛОГ</p>
-            <h2 style="font-size: 18px; margin-top: 2px;">Товары и ссылки выдачи</h2>
+            <h2 style="font-size: 18px; margin-top: 2px;">Товары и выдача</h2>
         </div>
 
         <form method="POST" action="/add-product" style="background: var(--input-bg); padding: 12px; border-radius: 12px; border: 1px solid var(--border-color); margin-bottom: 16px;">
@@ -536,7 +535,8 @@ async def products_page(status: str = None):
             </select>
             <input type="text" name="product_name" placeholder="Название товара" required style="margin-bottom: 8px;">
             <input type="number" step="0.01" name="price" placeholder="Цена ($)" required style="margin-bottom: 8px;">
-            <input type="url" name="product_link" placeholder="Ссылка на выдачу после оплаты" required style="margin-bottom: 8px;">
+            <input type="url" name="product_link" placeholder="Ссылка выдачи после оплаты (необязательно)" style="margin-bottom: 8px;">
+            <input type="url" name="photo_link" placeholder="Ссылка на фото товара (необязательно)" style="margin-bottom: 8px;">
             <button type="submit">Сохранить товар</button>
         </form>
 
@@ -553,15 +553,17 @@ async def products_page(status: str = None):
     return get_page(content, "STELLA SYSTEM - PRODUCTS", show_intro=False, show_full_nav=True)
 
 @app.post("/add-product", response_class=HTMLResponse)
-async def add_product(category: str = Form(...), city: str = Form(...), district: str = Form(...), product_name: str = Form(...), price: float = Form(...), product_link: str = Form(...)):
-    if category and city and district and product_name and product_link:
+async def add_product(category: str = Form(...), city: str = Form(...), district: str = Form(...), product_name: str = Form(...), price: float = Form(...), product_link: str = Form(""), photo_link: str = Form("")):
+    # Проверяем, что заполнена либо ссылка на выдачу, либо фото
+    if category and city and district and product_name and (product_link or photo_link):
         PRODUCTS_DB.append({
             "category": category,
             "city": city,
             "district": district,
             "name": product_name,
             "price": price,
-            "product_link": product_link
+            "product_link": product_link,
+            "photo_link": photo_link
         })
         return RedirectResponse(url="/products?status=success", status_code=303)
     return RedirectResponse(url="/products?status=error", status_code=303)
