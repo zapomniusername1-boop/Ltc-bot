@@ -143,16 +143,6 @@ BASE_TEMPLATE = """<!DOCTYPE html>
             margin-top: 12px; text-align: center; display: block; text-decoration: none; 
             padding: 11px; border-radius: 10px; color: #fca5a5; font-weight: 600; font-size: 14px;
         }
-
-        .modal {
-            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(5, 8, 19, 0.8); z-index: 2000; justify-content: center; align-items: center;
-        }
-        .modal.active { display: flex; }
-        .modal-content {
-            background: var(--card-bg); border: 1px solid var(--border-color); padding: 24px;
-            border-radius: 16px; width: 90%; max-width: 360px; backdrop-filter: blur(20px);
-        }
     </style>
 </head>
 <body data-theme="dark">
@@ -164,34 +154,10 @@ BASE_TEMPLATE = """<!DOCTYPE html>
         __CONTENT__
     </div>
 
-    <div id="districtModal" class="modal">
-        <div class="modal-content">
-            <h3 style="margin-bottom: 14px; font-size: 16px; color: #38bdf8;">➕ Добавить район</h3>
-            <form method="POST" action="/add-district">
-                <select name="city" required>
-                    <option value="" disabled selected>Выберите город</option>
-                    <option value="Кишинев">Кишинев</option>
-                    <option value="Бельцы">Бельцы</option>
-                    <option value="Дрокия">Дрокия</option>
-                    <option value="Кагул">Кагул</option>
-                </select>
-                <input type="text" name="district_name" placeholder="Название района" required>
-                <button type="submit">Сохранить район</button>
-            </form>
-            <button onclick="toggleModal(false)" style="background: transparent; color: var(--text-muted); border: none; margin-top: 10px; width: 100%; cursor: pointer;">Отмена</button>
-        </div>
-    </div>
-
     <script>
         function toggleSidebar() {
             const sb = document.getElementById('sidebar');
             if (sb) sb.classList.toggle('open');
-        }
-        function toggleModal(show) {
-            const modal = document.getElementById('districtModal');
-            if (show) modal.classList.add('active');
-            else modal.classList.remove('active');
-            toggleSidebar();
         }
         function toggleTheme() {
             const body = document.body;
@@ -243,7 +209,7 @@ def get_page(content: str, title: str = "STELLA SYSTEM", show_intro: bool = Fals
             </div>
             <div class="sidebar-menu">
                 <a href="/dashboard">📊 Статистика и Графика</a>
-                <a href="#" onclick="toggleModal(true)">⚙️ Районы (Добавить)</a>
+                <a href="/districts">📍 Управление районами</a>
                 <a href="/" style="color: #fca5a5;">🚪 Выход</a>
             </div>
         </div>
@@ -312,10 +278,56 @@ async def check_pin(pin_code: str = Form(...)):
 async def dashboard_get():
     return await render_main_dashboard()
 
+# ОТДЕЛЬНАЯ СТРАНИЦА УПРАВЛЕНИЯ РАЙОНАМИ
+@app.get("/districts", response_class=HTMLResponse)
+async def districts_page():
+    list_html = "".join([f"""
+        <div style="display: flex; justify-content: space-between; align-items: center; background: var(--input-bg); padding: 10px 12px; border-radius: 8px; margin-bottom: 8px; border: 1px solid var(--input-border);">
+            <div>
+                <span style="font-size: 13px; font-weight: 600;">{d['district']}</span>
+                <span style="font-size: 11px; color: var(--text-muted); display: block;">Город: {d['city']}</span>
+            </div>
+            <span style="font-size: 12px; color: #38bdf8; font-weight: 600;">{d['items']} тов. (${{d['usd']}})</span>
+        </div>
+    """ for d in CITIES_DB])
+
+    content = f"""
+        <div style="text-align:center; margin-bottom: 14px;">
+            <p style="color: #38bdf8; font-size: 11px; letter-spacing: 2px; font-weight: 600;">УПРАВЛЕНИЕ ЛОКАЦИЯМИ</p>
+            <h2 style="font-size: 18px; margin-top: 2px;">Список районов</h2>
+        </div>
+
+        <!-- Форма добавления района -->
+        <form method="POST" action="/add-district" style="background: var(--input-bg); padding: 12px; border-radius: 12px; border: 1px solid var(--border-color); margin-bottom: 16px;">
+            <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 8px; font-weight: 600;">➕ ДОБАВИТЬ НОВЫЙ РАЙОН:</p>
+            <select name="city" required>
+                <option value="" disabled selected>Выберите город</option>
+                <option value="Кишинев">Кишинев</option>
+                <option value="Бельцы">Бельцы</option>
+                <option value="Дрокия">Дрокия</option>
+                <option value="Кагул">Кагул</option>
+            </select>
+            <input type="text" name="district_name" placeholder="Название района" required style="margin-bottom: 8px;">
+            <button type="submit">Сохранить район</button>
+        </form>
+
+        <!-- Лист существующих районов -->
+        <div style="margin-bottom: 14px;">
+            <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 6px; font-weight: 600;">АКТИВНЫЕ РАЙОНЫ:</p>
+            <div style="max-height: 160px; overflow-y: auto;">
+                {list_html}
+            </div>
+        </div>
+
+        <a href='/dashboard' class='logout' style='background: #0284c7; color: #fff; border: none; text-decoration: none;'>← Вернуться в дашборд</a>
+    """
+    return get_page(content, "STELLA SYSTEM - DISTRICTS", show_intro=False, show_full_nav=True)
+
 @app.post("/add-district", response_class=HTMLResponse)
 async def add_district(city: str = Form(...), district_name: str = Form(...)):
-    CITIES_DB.append({"city": city, "district": district_name, "sales": "$100", "items": 10, "usd": 100, "ltc": 1.5})
-    return await render_main_dashboard(intro=False)
+    CITIES_DB.append({"city": city, "district": district_name, "sales": "$100", "items": 12, "usd": 100, "ltc": 1.5})
+    # После сохранения перенаправляем обратно на страницу районов
+    return RedirectResponse(url="/districts", status_code=303)
 
 async def render_main_dashboard(intro: bool = True):
     dashboard_content = """
@@ -347,7 +359,7 @@ async def render_main_dashboard(intro: bool = True):
         <div style="background: var(--input-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 12px; margin-bottom: 14px;">
             <div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 6px;">
                 <span style="font-size: 11px; color: var(--text-muted);">Районы (товаров куплено):</span>
-                <button onclick="toggleModal(true)" style="width: auto; padding: 3px 6px; font-size: 10px; background: #0284c7;">⚙️ Район</button>
+                <a href="/districts" style="font-size: 10px; color: #38bdf8; text-decoration: none; font-weight: 600;">⚙️ Изменить</a>
             </div>
             <div style="background: rgba(15, 23, 42, 0.5); padding: 6px; border-radius: 8px; text-align: center; margin-bottom: 8px;">
                 <span style="font-size: 9px; color: var(--text-muted);" id="label-district">ВЫБРАННЫЙ РАЙОН: ВСЕ</span>
@@ -359,7 +371,6 @@ async def render_main_dashboard(intro: bool = True):
         <a href='/' class='logout' style='margin-top: 8px; text-decoration: none;'>Выйти</a>
 
         <script>
-            // Данные доходов по месяцам
             const monthlyData = [
                 { month: 'Июль', usd: 120, ltc: 1.85 },
                 { month: 'Авг', usd: 340, ltc: 5.23 },
@@ -404,7 +415,6 @@ async def render_main_dashboard(intro: bool = True):
                 }
             });
 
-            // Данные районов (столбцы)
             const districtsData = __DISTRICTS_JSON__;
 
             const ctxDistrict = document.getElementById('districtChart').getContext('2d');
@@ -442,7 +452,7 @@ async def render_main_dashboard(intro: bool = True):
                         if (elements.length > 0) {
                             const item = districtsData[elements[0].index];
                             document.getElementById('label-district').innerText = 'РАЙОН: ' + item.district.toUpperCase();
-                            document.getElementById('stat-items').innerText = item.items + ' товаров (л-в: $' + item.usd + ')';
+                            document.getElementById('stat-items').innerText = item.items + ' товаров (выручка: $' + item.usd + ')';
                         }
                     }
                 }
