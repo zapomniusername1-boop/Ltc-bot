@@ -293,7 +293,6 @@ async def verify_pin_page(username: str = Form(...), password: str = Form(...)):
     """
     return get_page(content, "STELLA SYSTEM - PIN", show_intro=False, show_full_nav=False)
 
-# После ПИН-кода сразу переходим в дашборд с 3-секундной заставкой STELLA
 @app.post("/check-pin", response_class=HTMLResponse)
 async def check_pin(pin_code: str = Form(...)):
     if pin_code != SECRET_PIN:
@@ -304,7 +303,6 @@ async def check_pin(pin_code: str = Form(...)):
 async def dashboard_get():
     return await render_main_dashboard(intro=False)
 
-# РАЗДЕЛ НАСТРОЙКИ БОТА
 @app.get("/bot-settings", response_class=HTMLResponse)
 async def bot_settings_page(status: str = None):
     popup_script = ""
@@ -344,7 +342,6 @@ async def update_bot(bot_name: str = Form(...), bot_token: str = Form(...)):
         return RedirectResponse(url="/bot-settings?status=success", status_code=303)
     return RedirectResponse(url="/bot-settings?status=error", status_code=303)
 
-# РАЗДЕЛ ГОРОДОВ
 @app.get("/cities", response_class=HTMLResponse)
 async def cities_page(status: str = None):
     list_html = "".join([f"""
@@ -390,7 +387,6 @@ async def add_city(city_name: str = Form(...)):
         return RedirectResponse(url="/cities?status=success", status_code=303)
     return RedirectResponse(url="/cities?status=error", status_code=303)
 
-# РАЗДЕЛ РАЙОНОВ
 @app.get("/districts", response_class=HTMLResponse)
 async def districts_page(status: str = None):
     city_options = "".join([f'<option value="{c}">{c}</option>' for c in CITIES_DB])
@@ -451,7 +447,7 @@ async def render_main_dashboard(intro: bool = True):
     labels = [d['district'] for d in DISTRICTS_DB] if DISTRICTS_DB else ["Нет районов"]
     items_data = [d['items'] for d in DISTRICTS_DB] if DISTRICTS_DB else [0]
 
-    dashboard_content = f"""
+    dashboard_content = """
         <div style="text-align:center; margin-bottom: 12px;">
             <p style="color: #38bdf8; font-size: 11px; letter-spacing: 2px; font-weight: 600;">АНАЛИТИКА СИСТЕМЫ</p>
             <h2 style="font-size: 18px; margin-top: 2px;">Доходы и Районы</h2>
@@ -460,7 +456,7 @@ async def render_main_dashboard(intro: bool = True):
         <div style="background: var(--input-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 12px; margin-bottom: 12px;">
             <div style="display: flex; justify-content: space-between; align-items: center;">
                 <span style="font-size: 11px; color: var(--text-muted);">Активный бот:</span>
-                <span style="font-size: 12px; color: #4ade80; font-weight: 600;">🤖 {BOT_CONFIG['name']}</span>
+                <span style="font-size: 12px; color: #4ade80; font-weight: 600;">🤖 __BOT_NAME__</span>
             </div>
         </div>
 
@@ -566,7 +562,7 @@ async def render_main_dashboard(intro: bool = True):
     labels_json = json.dumps(labels, ensure_ascii=False)
     items_json = json.dumps(items_data, ensure_ascii=False)
     
-    final_content = dashboard_content.replace("__DISTRICTS_LABELS__", labels_json).replace("__DISTRICTS_ITEMS__", items_json)
+    final_content = dashboard_content.replace("__BOT_NAME__", BOT_CONFIG["name"]).replace("__DISTRICTS_LABELS__", labels_json).replace("__DISTRICTS_ITEMS__", items_json)
     return get_page(final_content, "STELLA SYSTEM - DASHBOARD", show_intro=intro, show_full_nav=True)
 
 if __name__ == "__main__":
