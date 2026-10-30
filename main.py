@@ -110,8 +110,7 @@ ADMIN_PANEL = """
         <form method="POST" action="/add-bot">
             <input type="text" name="bot_name" placeholder="Имя бота" required>
             <input type="text" name="bot_token" placeholder="Токен бота от BotFather" required>
-            <!-- Ограничение на 4 цифры прямо в браузере -->
-            <input type="password" name="pin_code" placeholder="ПИН-код (ровно 4 цифры)" pattern="[0-9]{4}" maxlength="4" inputmode="numeric" required>
+            <input type="password" name="pin_code" placeholder="ПИН-код (4 цифры)" pattern="[0-9]{4}" maxlength="4" inputmode="numeric" required>
             <button type="submit">Запустить бота в сеть</button>
         </form>
         
@@ -171,4 +170,58 @@ LOGIN_PAGE = """
             color: #fff; 
             box-sizing: border-box; 
         }
-        input:
+        input:focus {
+            border-color: #38bdf8;
+            outline: none;
+            box-shadow: 0 0 8px rgba(56, 189, 248, 0.3);
+        }
+        button { 
+            background: linear-gradient(135deg, #3b82f6, #6366f1); 
+            border: none; 
+            font-weight: bold; 
+            cursor: pointer; 
+        }
+        button:hover { 
+            background: linear-gradient(135deg, #2563eb, #4f46e5); 
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="brand-logo">
+            <h1>🌌 COSMO MARKET</h1>
+        </div>
+        <h2>Вход в систему</h2>
+        <form method="POST" action="/login">
+            <input type="text" name="username" placeholder="Логин" required>
+            <input type="password" name="password" placeholder="Пароль" required>
+            <button type="submit">Авторизоваться</button>
+        </form>
+    </div>
+</body>
+</html>
+"""
+
+SECRET_PIN = "7777"
+
+@app.get("/", response_class=HTMLResponse)
+async def index():
+    return LOGIN_PAGE
+
+@app.post("/login", response_class=HTMLResponse)
+async def login(username: str = Form(...), password: str = Form(...)):
+    return ADMIN_PANEL
+
+@app.post("/add-bot", response_class=HTMLResponse)
+async def add_bot(bot_name: str = Form(...), bot_token: str = Form(...), pin_code: str = Form(...)):
+    if len(pin_code) != 4 or not pin_code.isdigit():
+        return "<body style='background:#0f172a;color:#fff;text-align:center;padding-top:50px;font-family:sans-serif;'><h2 style='color:#ef4444;'>❌ Ошибка!</h2><p>ПИН-код должен состоять ровно из 4 цифр.</p><a href='/' style='color:#38bdf8;'>Назад</a></body>"
+    
+    if pin_code != SECRET_PIN:
+        return "<body style='background:#0f172a;color:#fff;text-align:center;padding-top:50px;font-family:sans-serif;'><h2 style='color:#ef4444;'>❌ Неверный ПИН-код!</h2><p>Попробуйте снова (подсказка: 7777).</p><a href='/' style='color:#38bdf8;'>Назад</a></body>"
+    
+    return f"<body style='background:#0f172a;color:#fff;text-align:center;padding-top:50px;font-family:sans-serif;'><h2 style='color:#4ade80;'>🚀 Бот '{bot_name}' запущен в космос!</h2><p>ПИН-код подтвержден успешно.</p><a href='/' style='color:#38bdf8;'>Назад в панель</a></body>"
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
