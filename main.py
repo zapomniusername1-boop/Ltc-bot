@@ -43,7 +43,8 @@ def render_login_page():
         }
         .banner-img {
             width: 100%;
-            height: auto;
+            height: 180px;
+            object-fit: cover;
             border-radius: 12px;
             margin-bottom: 20px;
             border: 1px solid rgba(255, 255, 255, 0.1);
@@ -92,8 +93,8 @@ def render_login_page():
     </div>
 
     <div class="card">
-        <!-- Та самая картинка с Землей и кольцом -->
-        <img src="https://i.ibb.co/689N1pG/stella-banner.jpg" alt="Stella Space" class="banner-img" onerror="this.src='https://images.unsplash.com/photo-1506703719100-a0f3a48c0f86?q=80&w=800&auto=format&fit=crop'">
+        <!-- Рабочая стабильная космическая картинка с планетой и атмосферой -->
+        <img src="https://images.unsplash.com/photo-1451187580459-43490279c0fa?q=80&w=800&auto=format&fit=crop" alt="Stella Space" class="banner-img">
 
         <form method="POST" action="/login">
             <div class="input-group">
