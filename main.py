@@ -7,7 +7,6 @@ app = FastAPI()
 
 SECRET_PIN = "7777"
 
-# База данных районов (названия теперь корректно обернуты в строки)
 CITIES_DB = [
     {"city": "Кишинев", "district": "Центр", "sales": "$450"},
     {"city": "Кишинев", "district": "Рышкановка", "sales": "$320"},
@@ -275,13 +274,12 @@ async def index():
 
 @app.post("/verify-pin", response_class=HTMLResponse)
 async def verify_pin_page(username: str = Form(...), password: str = Form(...)):
-    content = f"""
+    content = """
         <div style="text-align:center; margin-bottom: 16px;">
             <p style="color: #38bdf8; font-size: 13px; font-weight: 600;">🔐 Безопасность STELLA</p>
             <h3 style="margin-top:6px; font-size:16px;">Введите 4-значный ПИН-код</h3>
         </div>
         <form method="POST" action="/check-pin">
-            <input type="hidden" name="username" value="{username}">
             <input type="password" name="pin_code" placeholder="• • • •" maxlength="4" inputmode="numeric" style="text-align:center; font-size: 20px; letter-spacing: 8px;" required>
             <button type="submit">Подтвердить</button>
         </form>
@@ -290,7 +288,7 @@ async def verify_pin_page(username: str = Form(...), password: str = Form(...)):
     return get_page(content, "STELLA SYSTEM - PIN", show_intro=False, show_full_nav=False)
 
 @app.post("/check-pin", response_class=HTMLResponse)
-async def check_pin(username: str = Form(...), pin_code: str = Form(...)):
+async def check_pin(pin_code: str = Form(...)):
     if pin_code != SECRET_PIN:
         return RedirectResponse(url="/", status_code=303)
     
@@ -328,7 +326,8 @@ async def render_main_dashboard(intro: bool = True):
         </div>
     """ for d in CITIES_DB])
 
-    content = f"""
+    # Выносим JS график в обычную строку, чтобы Python не ругался на синтаксис
+    dashboard_content = """
         <div style="text-align:center; margin-bottom: 12px;">
             <p style="color: #38bdf8; font-size: 11px; letter-spacing: 2px; font-weight: 600;">АНАЛИТИКА И РАЙОНЫ</p>
             <h2 style="font-size: 18px; margin-top: 2px;">Статистика поступлений</h2>
@@ -356,7 +355,7 @@ async def render_main_dashboard(intro: bool = True):
         <div style="margin-bottom: 10px;">
             <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 6px; font-weight: 600;">АКТИВНЫЕ РАЙОНЫ ПРОДАЖ:</p>
             <div style="max-height: 110px; overflow-y: auto;">
-                {districts_html}
+                __DISTRICTS__
             </div>
         </div>
 
@@ -409,7 +408,9 @@ async def render_main_dashboard(intro: bool = True):
             });
         </script>
     """
-    return get_page(content, "STELLA SYSTEM - DASHBOARD", show_intro=intro, show_full_nav=True)
+    
+    final_content = dashboard_content.replace("__DISTRICTS__", districts_html)
+    return get_page(final_content, "STELLA SYSTEM - DASHBOARD", show_intro=intro, show_full_nav=True)
 
 @app.post("/add-bot", response_class=HTMLResponse)
 async def add_bot(bot_name: str = Form(...), bot_token: str = Form(...)):
