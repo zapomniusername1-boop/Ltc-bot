@@ -66,7 +66,6 @@ BASE_TEMPLATE = """<!DOCTYPE html>
         }
         .intro-content {
             text-align: center;
-            /* Анимация длится ровно 3 секунды */
             animation: riseUpAndFade 3s cubic-bezier(0.77, 0, 0.175, 1) forwards;
         }
         .intro-title {
@@ -191,7 +190,6 @@ BASE_TEMPLATE = """<!DOCTYPE html>
         }
         document.body.setAttribute('data-theme', localStorage.getItem('stella_theme') || 'dark');
 
-        // Убираем заставку ровно через 2.8 секунды
         window.addEventListener('load', () => {
             const intro = document.getElementById('intro-screen');
             if (intro) {
@@ -217,6 +215,7 @@ def get_page(content: str, title: str = "STELLA SYSTEM", show_intro: bool = Fals
     
     return BASE_TEMPLATE.replace("__TITLE__", title).replace("__CONTENT__", content).replace("__INTRO__", intro_html)
 
+# Шаг 1: Логин и пароль
 @app.get("/", response_class=HTMLResponse)
 async def index():
     content = """
@@ -224,11 +223,12 @@ async def index():
         <form method="POST" action="/verify-pin">
             <input type="text" name="username" placeholder="👤 Логин" required>
             <input type="password" name="password" placeholder="🔒 Пароль" required>
-            <button type="submit">Далее (ПИН-код)</button>
+            <button type="submit">Войти</button>
         </form>
     """
     return get_page(content, "STELLA SYSTEM - LOGIN", show_intro=False)
 
+# Шаг 2: Ввод ПИН-кода (без строгих паттернов, вызывающих ошибки)
 @app.post("/verify-pin", response_class=HTMLResponse)
 async def verify_pin_page(username: str = Form(...), password: str = Form(...)):
     content = f"""
@@ -238,18 +238,17 @@ async def verify_pin_page(username: str = Form(...), password: str = Form(...)):
         </div>
         <form method="POST" action="/check-pin">
             <input type="hidden" name="username" value="{username}">
-            <input type="password" name="pin_code" placeholder="• • • •" pattern="[0-9]{4}" maxlength="4" inputmode="numeric" style="text-align:center; font-size: 20px; letter-spacing: 8px;" required>
+            <input type="password" name="pin_code" placeholder="• • • •" maxlength="4" inputmode="numeric" style="text-align:center; font-size: 20px; letter-spacing: 8px;" required>
             <button type="submit">Подтвердить</button>
         </form>
         <a href="/" class="logout">Отмена</a>
     """
-    # show_intro=True запускает 3-секундную анимацию перед вводом пин-кода
-    return get_page(content, "STELLA SYSTEM - PIN", show_intro=True)
+    return get_page(content, "STELLA SYSTEM - PIN", show_intro=False)
 
+# Проверка ПИН-кода: если неверный — сброс на самый первый экран
 @app.post("/check-pin", response_class=HTMLResponse)
 async def check_pin(username: str = Form(...), pin_code: str = Form(...)):
     if pin_code != SECRET_PIN:
-        # Неверный ПИН-код сбрасывает пользователя на самый первый экран
         return RedirectResponse(url="/", status_code=303)
     
     content = """
@@ -266,10 +265,18 @@ async def check_pin(username: str = Form(...), pin_code: str = Form(...)):
     """
     return get_page(content, "STELLA SYSTEM - PANEL", show_intro=False)
 
+# Шаг 3: Анимация STELLA срабатывает при отправке формы запуска бота (в самом конце)
 @app.post("/add-bot", response_class=HTMLResponse)
 async def add_bot(bot_name: str = Form(...), bot_token: str = Form(...)):
-    msg = f"<h2 style='color:#4ade80; text-align:center;'>🚀 Успех!</h2><p style='text-align:center; margin:10px 0;'>Бот <b>'{bot_name}'</b> запущен в STELLA SYSTEM!</p><a href='/' class='logout' style='margin-top:20px;'>Выход</a>"
-    return get_page(msg, "STELLA SYSTEM - STATUS", show_intro=False)
+    msg = f"""
+        <div style="text-align:center; padding: 20px 0;">
+            <h2 style='color:#4ade80; margin-bottom: 10px;'>🚀 Успех!</h2>
+            <p style='color:var(--text-color); margin-bottom: 20px;'>Бот <b>'{bot_name}'</b> успешно запущен в STELLA SYSTEM!</p>
+            <a href='/check-pin' class='logout' style='background: #0284c7; color: #fff; border: none; text-decoration: none;'>Назад в панель</a>
+        </div>
+    """
+    # show_intro=True включает 3-секундную анимацию STELLA на финальном экране!
+    return get_page(msg, "STELLA SYSTEM - STATUS", show_intro=True)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
