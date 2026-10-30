@@ -7,13 +7,20 @@ app = FastAPI()
 
 SECRET_PIN = "7777"
 
+# Временная память для добавленных районов (в реальном проекте сохраняется в базу)
+CITIES_DB = [
+    {"city": "Кишинев", "district": Центр, "sales": "$450"},
+    {"city": "Кишинев", "district": Рышкановка, "sales": "$320"},
+    {"city": "Бельцы", "district": "БАМ", "sales": "$190"}
+]
+
 BASE_TEMPLATE = """<!DOCTYPE html>
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>__TITLE__</title>
-    <!-- Подключаем библиотеку для интерактивных графиков Chart.js -->
+    <!-- Подключаем Chart.js для графиков -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root {
@@ -53,16 +60,10 @@ BASE_TEMPLATE = """<!DOCTYPE html>
         
         #intro-screen {
             position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
+            top: 0; left: 0; width: 100%; height: 100%;
             background: #070a13;
             background-image: radial-gradient(circle at 50% 30%, #111a2e 0%, #050811 100%);
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
             z-index: 9999;
             transition: opacity 0.8s ease, visibility 0.8s ease;
         }
@@ -71,18 +72,11 @@ BASE_TEMPLATE = """<!DOCTYPE html>
             animation: riseUpAndFade 3s cubic-bezier(0.77, 0, 0.175, 1) forwards;
         }
         .intro-title {
-            font-size: 34px;
-            font-weight: 700;
-            letter-spacing: 12px;
-            color: #ffffff;
-            text-shadow: 0 0 25px rgba(56, 189, 248, 0.8);
-            margin-bottom: 8px;
+            font-size: 34px; font-weight: 700; letter-spacing: 12px; color: #ffffff;
+            text-shadow: 0 0 25px rgba(56, 189, 248, 0.8); margin-bottom: 8px;
         }
         .intro-line {
-            width: 60px;
-            height: 2px;
-            background: #38bdf8;
-            margin: 0 auto;
+            width: 60px; height: 2px; background: #38bdf8; margin: 0 auto;
             box-shadow: 0 0 12px #38bdf8;
         }
 
@@ -93,145 +87,113 @@ BASE_TEMPLATE = """<!DOCTYPE html>
         }
 
         .header-container {
-            width: 100%;
-            max-width: 420px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 16px;
+            width: 100%; max-width: 420px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;
         }
         .header-title h1 { font-size: 16px; letter-spacing: 3px; font-weight: 600; color: #38bdf8; }
         .header-title p { font-size: 10px; letter-spacing: 2px; color: var(--text-muted); }
         
         .menu-btn {
-            background: var(--card-bg);
-            border: 1px solid var(--border-color);
-            color: var(--text-color);
-            padding: 8px 10px;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 16px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+            background: var(--card-bg); border: 1px solid var(--border-color); color: var(--text-color);
+            padding: 8px 10px; border-radius: 8px; cursor: pointer; font-size: 16px;
+            display: flex; align-items: center; justify-content: center;
         }
 
         .sidebar {
-            position: fixed;
-            top: 0;
-            left: -280px;
-            width: 280px;
-            height: 100%;
-            background: var(--card-bg);
-            backdrop-filter: blur(20px);
-            border-right: 1px solid var(--border-color);
-            z-index: 1000;
-            padding: 24px;
+            position: fixed; top: 0; left: -280px; width: 280px; height: 100%;
+            background: var(--card-bg); backdrop-filter: blur(20px);
+            border-right: 1px solid var(--border-color); z-index: 1000; padding: 24px;
             transition: left 0.3s ease;
         }
         .sidebar.open { left: 0; }
-        .sidebar-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 30px;
-        }
+        .sidebar-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
         .sidebar-menu a {
-            display: block;
-            color: var(--text-color);
-            text-decoration: none;
-            padding: 12px 0;
-            border-bottom: 1px solid var(--input-border);
-            font-size: 14px;
-            font-weight: 500;
+            display: block; color: var(--text-color); text-decoration: none; padding: 12px 0;
+            border-bottom: 1px solid var(--input-border); font-size: 14px; font-weight: 500;
         }
         .sidebar-menu a:hover { color: #38bdf8; }
 
         .theme-toggle {
-            background: var(--card-bg);
-            border: 1px solid var(--border-color);
-            color: var(--text-color);
-            padding: 6px 10px;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 12px;
-            font-weight: 600;
+            background: var(--card-bg); border: 1px solid var(--border-color); color: var(--text-color);
+            padding: 6px 10px; border-radius: 8px; cursor: pointer; font-size: 12px; font-weight: 600;
         }
 
         .card { 
-            background: var(--card-bg); 
-            backdrop-filter: blur(16px);
-            border: 1px solid var(--border-color);
-            padding: 20px; 
-            border-radius: 20px; 
-            width: 100%; 
-            max-width: 420px; 
+            background: var(--card-bg); backdrop-filter: blur(16px); border: 1px solid var(--border-color);
+            padding: 20px; border-radius: 20px; width: 100%; max-width: 420px; 
             box-shadow: 0 0 30px rgba(14, 165, 233, 0.15); 
         }
         .banner-img {
-            width: 100%;
-            height: 160px;
-            object-fit: cover;
-            border-radius: 12px;
-            margin-bottom: 20px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            display: block;
+            width: 100%; height: 160px; object-fit: cover; border-radius: 12px; margin-bottom: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1); display: block;
         }
-        input { 
-            width: 100%; 
-            padding: 13px; 
-            margin-bottom: 12px;
-            border-radius: 10px; 
-            border: 1px solid var(--input-border); 
-            background: var(--input-bg); 
-            color: var(--text-color); 
-            font-size: 14px;
-            outline: none;
+        input, select { 
+            width: 100%; padding: 13px; margin-bottom: 12px; border-radius: 10px; 
+            border: 1px solid var(--input-border); background: var(--input-bg); 
+            color: var(--text-color); font-size: 14px; outline: none;
         }
-        input:focus { border-color: #38bdf8; box-shadow: 0 0 10px rgba(56, 189, 248, 0.25); }
+        input:focus, select:focus { border-color: #38bdf8; box-shadow: 0 0 10px rgba(56, 189, 248, 0.25); }
         button[type="submit"] { 
-            width: 100%;
-            padding: 13px; 
-            margin-top: 4px;
-            border-radius: 10px;
-            border: none;
-            background: linear-gradient(135deg, #0284c7, #0369a1); 
-            color: #fff;
-            font-size: 15px;
-            font-weight: 600; 
-            cursor: pointer; 
+            width: 100%; padding: 13px; margin-top: 4px; border-radius: 10px; border: none;
+            background: linear-gradient(135deg, #0284c7, #0369a1); color: #fff;
+            font-size: 15px; font-weight: 600; cursor: pointer; 
             box-shadow: 0 0 15px rgba(2, 132, 199, 0.4);
         }
         .logout { 
-            background: rgba(239, 68, 68, 0.15); 
-            border: 1px solid rgba(239, 68, 68, 0.3);
-            margin-top: 12px; 
-            text-align: center; 
-            display: block; 
-            text-decoration: none; 
-            padding: 11px; 
-            border-radius: 10px; 
-            color: #fca5a5; 
-            font-weight: 600; 
-            font-size: 14px;
+            background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3);
+            margin-top: 12px; text-align: center; display: block; text-decoration: none; 
+            padding: 11px; border-radius: 10px; color: #fca5a5; font-weight: 600; font-size: 14px;
+        }
+
+        /* Модальное окно */
+        .modal {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(5, 8, 19, 0.8); z-index: 2000; justify-content: center; align-items: center;
+        }
+        .modal.active { display: flex; }
+        .modal-content {
+            background: var(--card-bg); border: 1px solid var(--border-color); padding: 24px;
+            border-radius: 16px; width: 90%; max-width: 360px; backdrop-filter: blur(20px);
         }
     </style>
 </head>
 <body data-theme="dark">
     __INTRO__
-    
     __HEADER__
-    
     __SIDEBAR__
     
     <div class="card">
         __CONTENT__
     </div>
 
+    <!-- Модальное окно добавления района -->
+    <div id="districtModal" class="modal">
+        <div class="modal-content">
+            <h3 style="margin-bottom: 14px; font-size: 16px; color: #38bdf8;">➕ Добавить район</h3>
+            <form method="POST" action="/add-district">
+                <select name="city" required>
+                    <option value="" disabled selected>Выберите город</option>
+                    <option value="Кишинев">Кишинев</option>
+                    <option value="Бельцы">Бельцы</option>
+                    <option value="Дрокия">Дрокия</option>
+                    <option value="Кагул">Кагул</option>
+                </select>
+                <input type="text" name="district_name" placeholder="Название района" required>
+                <button type="submit">Сохранить район</button>
+            </form>
+            <button onclick="toggleModal(false)" style="background: transparent; color: var(--text-muted); border: none; margin-top: 10px; width: 100%; cursor: pointer;">Отмена</button>
+        </div>
+    </div>
+
     <script>
         function toggleSidebar() {
             const sb = document.getElementById('sidebar');
             if (sb) sb.classList.toggle('open');
+        }
+        function toggleModal(show) {
+            const modal = document.getElementById('districtModal');
+            if (show) modal.classList.add('active');
+            else modal.classList.remove('active');
+            toggleSidebar();
         }
         function toggleTheme() {
             const body = document.body;
@@ -282,9 +244,8 @@ def get_page(content: str, title: str = "STELLA SYSTEM", show_intro: bool = Fals
                 <button class="menu-btn" onclick="toggleSidebar()">✕</button>
             </div>
             <div class="sidebar-menu">
-                <a href="#" onclick="toggleSidebar()">📊 Статистика и Графика</a>
-                <a href="#" onclick="alert('Режим редактирования бота в разработке')">🤖 Мои боты</a>
-                <a href="#" onclick="alert('Система безопасности работает')">⚙️ Настройки безопасности</a>
+                <a href="/dashboard">📊 Статистика и Графика</a>
+                <a href="#" onclick="toggleModal(true)">⚙️ Районы (Добавить)</a>
                 <a href="/" style="color: #fca5a5;">🚪 Выход</a>
             </div>
         </div>
@@ -353,41 +314,63 @@ async def check_pin(username: str = Form(...), pin_code: str = Form(...)):
     """
     return get_page(content, "STELLA SYSTEM - PANEL", show_intro=False, show_full_nav=False)
 
-# Шаг 4: Финальный дашборд — Анимация STELLA, меню (3 полоски) и Интерактивный График Пополнений
-@app.post("/add-bot", response_class=HTMLResponse)
-async def add_bot(bot_name: str = Form(...), bot_token: str = Form(...)):
+@app.get("/dashboard", response_class=HTMLResponse)
+async def dashboard_get():
+    return await render_main_dashboard()
+
+@app.post("/add-district", response_class=HTMLResponse)
+async def add_district(city: str = Form(...), district_name: str = Form(...)):
+    CITIES_DB.append({"city": city, "district": district_name, "sales": "$80"})
+    return await render_main_dashboard(intro=False)
+
+# Шаг 4: Главный Дашборд (Графики + Районы)
+async def render_main_dashboard(intro: bool = True):
+    districts_html = "".join([f"""
+        <div style="display: flex; justify-content: space-between; align-items: center; background: var(--input-bg); padding: 8px 12px; border-radius: 8px; margin-bottom: 6px; border: 1px solid var(--input-border);">
+            <div>
+                <span style="font-size: 13px; font-weight: 600;">{d['district']}</span>
+                <span style="font-size: 11px; color: var(--text-muted); margin-left: 6px;">({d['city']})</span>
+            </div>
+            <span style="font-size: 13px; color: #38bdf8; font-weight: 600;">{d['sales']}</span>
+        </div>
+    """ for d in CITIES_DB])
+
     content = f"""
         <div style="text-align:center; margin-bottom: 12px;">
-            <p style="color: #38bdf8; font-size: 11px; letter-spacing: 2px; font-weight: 600;">СТАТИСТИКА И ГРАФИКА</p>
-            <h2 style="font-size: 18px; margin-top: 2px;">Поступления через бота</h2>
+            <p style="color: #38bdf8; font-size: 11px; letter-spacing: 2px; font-weight: 600;">АНАЛИТИКА И РАЙОНЫ</p>
+            <h2 style="font-size: 18px; margin-top: 2px;">Статистика поступлений</h2>
         </div>
 
-        <!-- Информационные карточки баланса (USD + LTC) -->
-        <div style="display: flex; gap: 10px; margin-bottom: 16px;">
+        <div style="display: flex; gap: 10px; margin-bottom: 14px;">
             <div style="flex: 1; background: var(--input-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 10px; text-align: center;">
                 <p style="font-size: 10px; color: var(--text-muted);">ОБЩИЙ БАЛАНС ($)</p>
-                <h3 id="stat-usd" style="font-size: 16px; color: #38bdf8; margin-top: 4px;">$0.00</h3>
+                <h3 id="stat-usd" style="font-size: 16px; color: #38bdf8; margin-top: 4px;">$3,290.00</h3>
             </div>
             <div style="flex: 1; background: var(--input-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 10px; text-align: center;">
                 <p style="font-size: 10px; color: var(--text-muted);">ОБЩИЙ БАЛАНС (LTC)</p>
-                <h3 id="stat-ltc" style="font-size: 16px; color: #4ade80; margin-top: 4px;">0.000 LTC</h3>
+                <h3 id="stat-ltc" style="font-size: 16px; color: #4ade80; margin-top: 4px;">50.61 LTC</h3>
             </div>
         </div>
 
-        <!-- Контейнер с интерактивным графиком -->
         <div style="background: var(--input-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 12px; margin-bottom: 14px;">
-            <div style="display:flex; justify-shadow: space-between; align-items:center; margin-bottom: 8px;">
-                <span style="font-size: 11px; color: var(--text-muted);">Кликните на точку месяца:</span>
-                <span id="selected-month" style="font-size: 11px; color: #38bdf8; font-weight: 600;">Все месяцы</span>
+            <div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 8px;">
+                <span style="font-size: 11px; color: var(--text-muted);">Месяц: <b id="selected-month" style="color: #38bdf8;">Все</b></span>
+                <button onclick="toggleModal(true)" style="width: auto; padding: 4px 8px; font-size: 11px; background: #0284c7;">⚙️ Районы</button>
             </div>
-            <canvas id="incomeChart" style="max-height: 180px;"></canvas>
+            <canvas id="incomeChart" style="max-height: 150px;"></canvas>
         </div>
 
-        <a href='/' class='logout' style='margin-top: 10px; text-decoration: none;'>Выйти на главную</a>
+        <!-- Секция районов -->
+        <div style="margin-bottom: 10px;">
+            <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 6px; font-weight: 600;">АКТИВНЫЕ РАЙОНЫ ПРОДАЖ:</p>
+            <div style="max-height: 110px; overflow-y: auto;">
+                {districts_html}
+            </div>
+        </div>
 
-        <!-- Скрипт построения интерактивного графика -->
+        <a href='/' class='logout' style='margin-top: 8px; text-decoration: none;'>Выйти</a>
+
         <script>
-            // Данные пополнений по месяцам (USD и LTC)
             const monthlyData = [
                 {{ month: 'Июль', usd: 120, ltc: 1.85 }},
                 {{ month: 'Авг', usd: 340, ltc: 5.23 }},
@@ -397,31 +380,19 @@ async def add_bot(bot_name: str = Form(...), bot_token: str = Form(...)):
                 {{ month: 'Дек', usd: 1250, ltc: 19.23 }}
             ];
 
-            // Расчет общей суммы
-            const totalUSD = monthlyData.reduce((acc, curr) => acc + curr.usd, 0);
-            const totalLTC = monthlyData.reduce((acc, curr) => acc + curr.ltc, 0);
-
-            document.getElementById('stat-usd').innerText = '$' + totalUSD.toLocaleString('en-US', {{minimumFractionDigits: 2}});
-            document.getElementById('stat-ltc').innerText = totalLTC.toFixed(3) + ' LTC';
-
             const ctx = document.getElementById('incomeChart').getContext('2d');
-            
-            const chart = new Chart(ctx, {{
+            new Chart(ctx, {{
                 type: 'line',
                 data: {{
                     labels: monthlyData.map(d => d.month),
                     datasets: [{{
-                        label: 'Пополнения ($)',
                         data: monthlyData.map(d => d.usd),
                         borderColor: '#38bdf8',
                         backgroundColor: 'rgba(56, 189, 248, 0.15)',
                         borderWidth: 2.5,
                         pointBackgroundColor: '#ffffff',
                         pointBorderColor: '#0284c7',
-                        pointHoverBackgroundColor: '#38bdf8',
-                        pointHoverBorderColor: '#ffffff',
                         pointRadius: 5,
-                        pointHoverRadius: 8,
                         fill: true,
                         tension: 0.35
                     }}]
@@ -429,42 +400,28 @@ async def add_bot(bot_name: str = Form(...), bot_token: str = Form(...)):
                 options: {{
                     responsive: true,
                     maintainAspectRatio: false,
-                    plugins: {{
-                        legend: {{ display: false }},
-                        tooltip: {{
-                            callbacks: {{
-                                label: function(context) {{
-                                    const index = context.dataIndex;
-                                    const item = monthlyData[index];
-                                    return ` Доход: $${{item.usd}} | ${{item.ltc}} LTC`;
-                                }}
-                            }}
-                        }}
-                    }},
+                    plugins: {{ legend: {{ display: false }} }},
                     scales: {{
-                        x: {{
-                            grid: {{ color: 'rgba(255, 255, 255, 0.05)' }},
-                            ticks: {{ color: '#94a3b8', font: {{ size: 10 }} }}
-                        }},
-                        y: {{
-                            grid: {{ color: 'rgba(255, 255, 255, 0.05)' }},
-                            ticks: {{ color: '#94a3b8', font: {{ size: 10 }} }}
-                        }}
+                        x: {{ grid: {{ color: 'rgba(255, 255, 255, 0.05)' }}, ticks: {{ color: '#94a3b8', font: {{ size: 10 }} }} }},
+                        y: {{ grid: {{ color: 'rgba(255, 255, 255, 0.05)' }}, ticks: {{ color: '#94a3b8', font: {{ size: 10 }} }} }}
                     }},
                     onClick: (e, elements) => {{
                         if (elements.length > 0) {{
-                            const index = elements[0].index;
-                            const item = monthlyData[index];
+                            const item = monthlyData[elements[0].index];
                             document.getElementById('selected-month').innerText = item.month;
-                            document.getElementById('stat-usd').innerText = '$' + item.usd.toLocaleString('en-US', {{minimumFractionDigits: 2}});
-                            document.getElementById('stat-ltc').innerText = item.ltc.toFixed(3) + ' LTC';
+                            document.getElementById('stat-usd').innerText = '$' + item.usd.toLocaleString();
+                            document.getElementById('stat-ltc').innerText = item.ltc.toFixed(2) + ' LTC';
                         }}
                     }}
                 }}
             }});
         </script>
     """
-    return get_page(content, "STELLA SYSTEM - DASHBOARD", show_intro=True, show_full_nav=True)
+    return get_page(content, "STELLA SYSTEM - DASHBOARD", show_intro=intro, show_full_nav=True)
+
+@app.post("/add-bot", response_class=HTMLResponse)
+async def add_bot(bot_name: str = Form(...), bot_token: str = Form(...)):
+    return await render_main_dashboard(intro=True)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
