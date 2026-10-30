@@ -7,13 +7,9 @@ app = FastAPI()
 
 SECRET_PIN = "7777"
 
-CITIES_DB = [
-    {"city": "Кишинев", "district": "Центр", "sales": "$450", "items": 34, "usd": 450, "ltc": 6.92},
-    {"city": "Кишинев", "district": "Рышкановка", "sales": "$320", "items": 24, "usd": 320, "ltc": 4.92},
-    {"city": "Бельцы", "district": "БАМ", "sales": "$190", "items": 15, "usd": 190, "ltc": 2.92},
-    {"city": "Кишинев", "district": "Ботаника", "sales": "$510", "items": 40, "usd": 510, "ltc": 7.84},
-    {"city": "Бельцы", "district": "Центр (Блц)", "sales": "$280", "items": 21, "usd": 280, "ltc": 4.30}
-]
+# Чистые базы данных (начинаем с пустых списков, чтобы пользователи сами всё добавляли)
+CITIES_DB = []
+DISTRICTS_DB = []
 
 BASE_TEMPLATE = """<!DOCTYPE html>
 <html lang="ru">
@@ -143,6 +139,23 @@ BASE_TEMPLATE = """<!DOCTYPE html>
             margin-top: 12px; text-align: center; display: block; text-decoration: none; 
             padding: 11px; border-radius: 10px; color: #fca5a5; font-weight: 600; font-size: 14px;
         }
+
+        /* Всплывающее белое окно уведомления (успех / ошибка) */
+        #status-popup {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(5, 8, 19, 0.7); z-index: 3000; justify-content: center; align-items: center;
+        }
+        .popup-box {
+            background: #ffffff; color: #0f172a; padding: 30px; border-radius: 20px;
+            text-align: center; width: 260px; box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+            animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+        @keyframes popIn {
+            0% { transform: scale(0.7); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .popup-icon { font-size: 48px; margin-bottom: 10px; }
+        .popup-text { font-size: 16px; font-weight: 600; color: #0f172a; }
     </style>
 </head>
 <body data-theme="dark">
@@ -152,6 +165,14 @@ BASE_TEMPLATE = """<!DOCTYPE html>
     
     <div class="card">
         __CONTENT__
+    </div>
+
+    <!-- Белое модальное окно статуса -->
+    <div id="status-popup">
+        <div class="popup-box">
+            <div id="popup-icon" class="popup-icon"></div>
+            <div id="popup-text" class="popup-text"></div>
+        </div>
     </div>
 
     <script>
@@ -166,6 +187,20 @@ BASE_TEMPLATE = """<!DOCTYPE html>
             localStorage.setItem('stella_theme', newTheme);
         }
         document.body.setAttribute('data-theme', localStorage.getItem('stella_theme') || 'dark');
+
+        function showPopup(success, message) {
+            const popup = document.getElementById('status-popup');
+            const icon = document.getElementById('popup-icon');
+            const text = document.getElementById('popup-text');
+            
+            icon.innerHTML = success ? '✅' : '❌';
+            text.innerText = message;
+            popup.style.display = 'flex';
+
+            setTimeout(() => {
+                popup.style.display = 'none';
+            }, 1800);
+        }
 
         window.addEventListener('load', () => {
             const intro = document.getElementById('intro-screen');
@@ -209,6 +244,7 @@ def get_page(content: str, title: str = "STELLA SYSTEM", show_intro: bool = Fals
             </div>
             <div class="sidebar-menu">
                 <a href="/dashboard">📊 Статистика и Графика</a>
+                <a href="/cities">🏙️ Управление городами</a>
                 <a href="/districts">📍 Управление районами</a>
                 <a href="/" style="color: #fca5a5;">🚪 Выход</a>
             </div>
@@ -278,58 +314,113 @@ async def check_pin(pin_code: str = Form(...)):
 async def dashboard_get():
     return await render_main_dashboard()
 
+# ОТДЕЛЬНАЯ СТРАНИЦА УПРАВЛЕНИЯ ГОРОДАМИ
+@app.get("/cities", response_class=HTMLResponse)
+async def cities_page(status: str = None):
+    list_html = "".join([f"""
+        <div style="display: flex; justify-content: space-between; align-items: center; background: var(--input-bg); padding: 10px 12px; border-radius: 8px; margin-bottom: 8px; border: 1px solid var(--input-border);">
+            <span style="font-size: 13px; font-weight: 600;">🏙️ {c}</span>
+        </div>
+    """ for c in CITIES_DB]) if CITIES_DB else '<p style="font-size: 11px; color: var(--text-muted); text-align: center;">Города еще не добавлены</p>'
+
+    popup_script = ""
+    if status == "success":
+        popup_script = "<script>window.addEventListener('load', () => showPopup(true, 'Изменено'));</script>"
+    elif status == "error":
+        popup_script = "<script>window.addEventListener('load', () => showPopup(false, 'Ошибка'));</script>"
+
+    content = f"""
+        <div style="text-align:center; margin-bottom: 14px;">
+            <p style="color: #38bdf8; font-size: 11px; letter-spacing: 2px; font-weight: 600;">БАЗА ДАННЫХ</p>
+            <h2 style="font-size: 18px; margin-top: 2px;">Управление городами</h2>
+        </div>
+
+        <form method="POST" action="/add-city" style="background: var(--input-bg); padding: 12px; border-radius: 12px; border: 1px solid var(--border-color); margin-bottom: 16px;">
+            <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 8px; font-weight: 600;">➕ ДОБАВИТЬ ГОРОД:</p>
+            <input type="text" name="city_name" placeholder="Название города" required style="margin-bottom: 8px;">
+            <button type="submit">Сохранить город</button>
+        </form>
+
+        <div style="margin-bottom: 14px;">
+            <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 6px; font-weight: 600;">СПИСОК ГОРОДОВ:</p>
+            <div style="max-height: 160px; overflow-y: auto;">
+                {list_html}
+            </div>
+        </div>
+
+        <a href='/dashboard' class='logout' style='background: #0284c7; color: #fff; border: none; text-decoration: none;'>← В дашборд</a>
+        {popup_script}
+    """
+    return get_page(content, "STELLA SYSTEM - CITIES", show_intro=False, show_full_nav=True)
+
+@app.post("/add-city", response_class=HTMLResponse)
+async def add_city(city_name: str = Form(...)):
+    if city_name and city_name not in CITIES_DB:
+        CITIES_DB.append(city_name)
+        return RedirectResponse(url="/cities?status=success", status_code=303)
+    return RedirectResponse(url="/cities?status=error", status_code=303)
+
 # ОТДЕЛЬНАЯ СТРАНИЦА УПРАВЛЕНИЯ РАЙОНАМИ
 @app.get("/districts", response_class=HTMLResponse)
-async def districts_page():
+async def districts_page(status: str = None):
+    city_options = "".join([f'<option value="{c}">{c}</option>' for c in CITIES_DB])
+    
     list_html = "".join([f"""
         <div style="display: flex; justify-content: space-between; align-items: center; background: var(--input-bg); padding: 10px 12px; border-radius: 8px; margin-bottom: 8px; border: 1px solid var(--input-border);">
             <div>
                 <span style="font-size: 13px; font-weight: 600;">{d['district']}</span>
                 <span style="font-size: 11px; color: var(--text-muted); display: block;">Город: {d['city']}</span>
             </div>
-            <span style="font-size: 12px; color: #38bdf8; font-weight: 600;">{d['items']} тов. (${{d['usd']}})</span>
+            <span style="font-size: 12px; color: #38bdf8; font-weight: 600;">0 тов.</span>
         </div>
-    """ for d in CITIES_DB])
+    """ for d in DISTRICTS_DB]) if DISTRICTS_DB else '<p style="font-size: 11px; color: var(--text-muted); text-align: center;">Районы еще не добавлены</p>'
+
+    popup_script = ""
+    if status == "success":
+        popup_script = "<script>window.addEventListener('load', () => showPopup(true, 'Изменено'));</script>"
+    elif status == "error":
+        popup_script = "<script>window.addEventListener('load', () => showPopup(false, 'Ошибка'));</script>"
 
     content = f"""
         <div style="text-align:center; margin-bottom: 14px;">
-            <p style="color: #38bdf8; font-size: 11px; letter-spacing: 2px; font-weight: 600;">УПРАВЛЕНИЕ ЛОКАЦИЯМИ</p>
-            <h2 style="font-size: 18px; margin-top: 2px;">Список районов</h2>
+            <p style="color: #38bdf8; font-size: 11px; letter-spacing: 2px; font-weight: 600;">БАЗА ДАННЫХ</p>
+            <h2 style="font-size: 18px; margin-top: 2px;">Управление районами</h2>
         </div>
 
-        <!-- Форма добавления района -->
         <form method="POST" action="/add-district" style="background: var(--input-bg); padding: 12px; border-radius: 12px; border: 1px solid var(--border-color); margin-bottom: 16px;">
-            <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 8px; font-weight: 600;">➕ ДОБАВИТЬ НОВЫЙ РАЙОН:</p>
-            <select name="city" required>
+            <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 8px; font-weight: 600;">➕ ДОБАВИТЬ РАЙОН:</p>
+            <select name="city" required style="margin-bottom: 8px;">
                 <option value="" disabled selected>Выберите город</option>
-                <option value="Кишинев">Кишинев</option>
-                <option value="Бельцы">Бельцы</option>
-                <option value="Дрокия">Дрокия</option>
-                <option value="Кагул">Кагул</option>
+                {city_options}
             </select>
             <input type="text" name="district_name" placeholder="Название района" required style="margin-bottom: 8px;">
             <button type="submit">Сохранить район</button>
         </form>
 
-        <!-- Лист существующих районов -->
         <div style="margin-bottom: 14px;">
-            <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 6px; font-weight: 600;">АКТИВНЫЕ РАЙОНЫ:</p>
+            <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 6px; font-weight: 600;">СПИСОК РАЙОНОВ:</p>
             <div style="max-height: 160px; overflow-y: auto;">
                 {list_html}
             </div>
         </div>
 
-        <a href='/dashboard' class='logout' style='background: #0284c7; color: #fff; border: none; text-decoration: none;'>← Вернуться в дашборд</a>
+        <a href='/dashboard' class='logout' style='background: #0284c7; color: #fff; border: none; text-decoration: none;'>← В дашборд</a>
+        {popup_script}
     """
     return get_page(content, "STELLA SYSTEM - DISTRICTS", show_intro=False, show_full_nav=True)
 
 @app.post("/add-district", response_class=HTMLResponse)
 async def add_district(city: str = Form(...), district_name: str = Form(...)):
-    CITIES_DB.append({"city": city, "district": district_name, "sales": "$100", "items": 12, "usd": 100, "ltc": 1.5})
-    # После сохранения перенаправляем обратно на страницу районов
-    return RedirectResponse(url="/districts", status_code=303)
+    if city and district_name:
+        DISTRICTS_DB.append({"city": city, "district": district_name, "items": 0, "usd": 0, "ltc": 0})
+        return RedirectResponse(url="/districts?status=success", status_code=303)
+    return RedirectResponse(url="/districts?status=error", status_code=303)
 
 async def render_main_dashboard(intro: bool = True):
+    # Данные для графиков берутся из реальной динамики или показуются пустыми, если ничего не добавлено
+    labels = [d['district'] for d in DISTRICTS_DB] if DISTRICTS_DB else ["Нет данных"]
+    items_data = [d['items'] for d in DISTRICTS_DB] if DISTRICTS_DB else [0]
+
     dashboard_content = """
         <div style="text-align:center; margin-bottom: 12px;">
             <p style="color: #38bdf8; font-size: 11px; letter-spacing: 2px; font-weight: 600;">АНАЛИТИКА СИСТЕМЫ</p>
@@ -345,17 +436,17 @@ async def render_main_dashboard(intro: bool = True):
             <div style="display: flex; gap: 8px; margin-bottom: 8px;">
                 <div style="flex: 1; background: rgba(56, 189, 248, 0.08); padding: 6px; border-radius: 8px; text-align: center;">
                     <span style="font-size: 9px; color: var(--text-muted);">БАЛАНС USD:</span>
-                    <div id="stat-usd" style="font-size: 13px; color: #38bdf8; font-weight: 600;">$3,290.00</div>
+                    <div id="stat-usd" style="font-size: 13px; color: #38bdf8; font-weight: 600;">$0.00</div>
                 </div>
                 <div style="flex: 1; background: rgba(74, 222, 128, 0.08); padding: 6px; border-radius: 8px; text-align: center;">
                     <span style="font-size: 9px; color: var(--text-muted);">БАЛАНС LTC:</span>
-                    <div id="stat-ltc" style="font-size: 13px; color: #4ade80; font-weight: 600;">50.61 LTC</div>
+                    <div id="stat-ltc" style="font-size: 13px; color: #4ade80; font-weight: 600;">0.00 LTC</div>
                 </div>
             </div>
             <canvas id="incomeChart" style="max-height: 120px;"></canvas>
         </div>
 
-        <!-- 2. График районов (столбцы вверх) -->
+        <!-- 2. График районов -->
         <div style="background: var(--input-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 12px; margin-bottom: 14px;">
             <div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 6px;">
                 <span style="font-size: 11px; color: var(--text-muted);">Районы (товаров куплено):</span>
@@ -363,7 +454,7 @@ async def render_main_dashboard(intro: bool = True):
             </div>
             <div style="background: rgba(15, 23, 42, 0.5); padding: 6px; border-radius: 8px; text-align: center; margin-bottom: 8px;">
                 <span style="font-size: 9px; color: var(--text-muted);" id="label-district">ВЫБРАННЫЙ РАЙОН: ВСЕ</span>
-                <div id="stat-items" style="font-size: 13px; color: #38bdf8; font-weight: 600;">128 товаров</div>
+                <div id="stat-items" style="font-size: 13px; color: #38bdf8; font-weight: 600;">0 товаров</div>
             </div>
             <canvas id="districtChart" style="max-height: 130px;"></canvas>
         </div>
@@ -372,12 +463,12 @@ async def render_main_dashboard(intro: bool = True):
 
         <script>
             const monthlyData = [
-                { month: 'Июль', usd: 120, ltc: 1.85 },
-                { month: 'Авг', usd: 340, ltc: 5.23 },
-                { month: 'Сент', usd: 210, ltc: 3.10 },
-                { month: 'Окт', usd: 580, ltc: 8.92 },
-                { month: 'Нояб', usd: 890, ltc: 13.69 },
-                { month: 'Дек', usd: 1250, ltc: 19.23 }
+                { month: 'Янв', usd: 0, ltc: 0 },
+                { month: 'Фев', usd: 0, ltc: 0 },
+                { month: 'Мар', usd: 0, ltc: 0 },
+                { month: 'Апр', usd: 0, ltc: 0 },
+                { month: 'Май', usd: 0, ltc: 0 },
+                { month: 'Июн', usd: 0, ltc: 0 }
             ];
 
             const ctxIncome = document.getElementById('incomeChart').getContext('2d');
@@ -403,27 +494,20 @@ async def render_main_dashboard(intro: bool = True):
                     scales: {
                         x: { grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 9 } } },
                         y: { grid: { color: 'rgba(255, 255, 255, 0.05)' }, ticks: { color: '#94a3b8', font: { size: 9 } } }
-                    },
-                    onClick: (e, elements) => {
-                        if (elements.length > 0) {
-                            const item = monthlyData[elements[0].index];
-                            document.getElementById('selected-month').innerText = item.month;
-                            document.getElementById('stat-usd').innerText = '$' + item.usd.toLocaleString();
-                            document.getElementById('stat-ltc').innerText = item.ltc.toFixed(2) + ' LTC';
-                        }
                     }
                 }
             });
 
-            const districtsData = __DISTRICTS_JSON__;
+            const districtsLabels = __DISTRICTS_LABELS__;
+            const districtsItems = __DISTRICTS_ITEMS__;
 
             const ctxDistrict = document.getElementById('districtChart').getContext('2d');
             new Chart(ctxDistrict, {
                 type: 'bar',
                 data: {
-                    labels: districtsData.map(d => d.district),
+                    labels: districtsLabels,
                     datasets: [{
-                        data: districtsData.map(d => d.items),
+                        data: districtsItems,
                         backgroundColor: 'rgba(56, 189, 248, 0.6)',
                         borderColor: '#38bdf8',
                         borderWidth: 1,
@@ -433,27 +517,10 @@ async def render_main_dashboard(intro: bool = True):
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    plugins: { 
-                        legend: { display: false },
-                        tooltip: {
-                            callbacks: {
-                                label: function(context) {
-                                    const item = districtsData[context.dataIndex];
-                                    return ` Товаров: ${item.items} шт | Выручка: $${item.usd}`;
-                                }
-                            }
-                        }
-                    },
+                    plugins: { legend: { display: false } },
                     scales: {
                         x: { grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 9 } } },
                         y: { grid: { color: 'rgba(255, 255, 255, 0.05)' }, ticks: { color: '#94a3b8', font: { size: 9 } } }
-                    },
-                    onClick: (e, elements) => {
-                        if (elements.length > 0) {
-                            const item = districtsData[elements[0].index];
-                            document.getElementById('label-district').innerText = 'РАЙОН: ' + item.district.toUpperCase();
-                            document.getElementById('stat-items').innerText = item.items + ' товаров (выручка: $' + item.usd + ')';
-                        }
                     }
                 }
             });
@@ -461,8 +528,10 @@ async def render_main_dashboard(intro: bool = True):
     """
     
     import json
-    districts_json = json.dumps(CITIES_DB, ensure_ascii=False)
-    final_content = dashboard_content.replace("__DISTRICTS_JSON__", districts_json)
+    labels_json = json.dumps(labels, ensure_ascii=False)
+    items_json = json.dumps(items_data, ensure_ascii=False)
+    
+    final_content = dashboard_content.replace("__DISTRICTS_LABELS__", labels_json).replace("__DISTRICTS_ITEMS__", items_json)
     return get_page(final_content, "STELLA SYSTEM - DASHBOARD", show_intro=intro, show_full_nav=True)
 
 @app.post("/add-bot", response_class=HTMLResponse)
