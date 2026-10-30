@@ -15,12 +15,32 @@ def render_login_page():
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>STELLA SYSTEM - ACCESS PORTAL</title>
     <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
+        :root {
+            --bg-gradient: radial-gradient(circle at 50% 30%, #111a2e 0%, #050811 100%);
+            --bg-color: #070a13;
+            --card-bg: rgba(15, 23, 42, 0.75);
+            --border-color: rgba(56, 189, 248, 0.3);
+            --text-color: #f8fafc;
+            --text-muted: #94a3b8;
+            --input-bg: rgba(15, 23, 42, 0.8);
+            --input-border: rgba(148, 163, 184, 0.2);
+        }
+        [data-theme="light"] {
+            --bg-gradient: radial-gradient(circle at 50% 30%, #e2e8f0 0%, #cbd5e1 100%);
+            --bg-color: #f1f5f9;
+            --card-bg: rgba(255, 255, 255, 0.85);
+            --border-color: rgba(2, 132, 199, 0.3);
+            --text-color: #0f172a;
+            --text-muted: #64748b;
+            --input-bg: rgba(255, 255, 255, 0.9);
+            --input-border: rgba(100, 116, 139, 0.3);
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; transition: background 0.3s, color 0.3s; }
         body { 
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
-            background: #070a13; 
-            background-image: radial-gradient(circle at 50% 30%, #111a2e 0%, #050811 100%);
-            color: #f8fafc; 
+            background: var(--bg-color); 
+            background-image: var(--bg-gradient);
+            color: var(--text-color); 
             display: flex; 
             flex-direction: column;
             justify-content: center; 
@@ -29,12 +49,12 @@ def render_login_page():
             padding: 20px;
         }
         .header-title { text-align: center; margin-bottom: 20px; }
-        .header-title h1 { font-size: 16px; letter-spacing: 4px; color: #e2e8f0; font-weight: 500; }
-        .header-title p { font-size: 10px; letter-spacing: 2px; color: #64748b; margin-top: 4px; }
+        .header-title h1 { font-size: 16px; letter-spacing: 4px; font-weight: 500; }
+        .header-title p { font-size: 10px; letter-spacing: 2px; color: var(--text-muted); margin-top: 4px; }
         .card { 
-            background: rgba(15, 23, 42, 0.75); 
+            background: var(--card-bg); 
             backdrop-filter: blur(16px);
-            border: 1px solid rgba(56, 189, 248, 0.3);
+            border: 1px solid var(--border-color);
             padding: 20px; 
             border-radius: 20px; 
             width: 100%; 
@@ -54,11 +74,11 @@ def render_login_page():
         .input-group { position: relative; margin-bottom: 14px; }
         input { 
             width: 100%; 
-            padding: 14px 14px 14px 16px; 
+            padding: 14px; 
             border-radius: 10px; 
-            border: 1px solid rgba(148, 163, 184, 0.2); 
-            background: rgba(15, 23, 42, 0.8); 
-            color: #fff; 
+            border: 1px solid var(--input-border); 
+            background: var(--input-bg); 
+            color: var(--text-color); 
             font-size: 15px;
             outline: none;
         }
@@ -76,145 +96,56 @@ def render_login_page():
             cursor: pointer; 
             box-shadow: 0 0 15px rgba(2, 132, 199, 0.4);
         }
-        .forgot-pass {
-            display: block;
-            text-align: center;
-            margin-top: 18px;
-            color: #94a3b8;
+        .theme-toggle {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
+            padding: 8px 12px;
+            border-radius: 8px;
+            cursor: pointer;
             font-size: 13px;
-            text-decoration: underline;
         }
     </style>
 </head>
-<body>
+<body data-theme="dark">
+    <button class="theme-toggle" onclick="toggleTheme()">🌓 Тема</button>
+
     <div class="header-title">
         <h1>STELLA SYSTEM</h1>
         <p>ACCESS PORTAL</p>
     </div>
 
     <div class="card">
-        <!-- Рабочая стабильная космическая картинка с планетой и атмосферой -->
         <img src="https://images.unsplash.com/photo-1451187580459-43490279c0fa?q=80&w=800&auto=format&fit=crop" alt="Stella Space" class="banner-img">
 
         <form method="POST" action="/login">
             <div class="input-group">
-                <input type="text" name="username" placeholder="👤 Логин" required>
+                <input type="text" name="username" placeholder="Логин" required>
             </div>
             
             <div class="input-group">
-                <input type="password" name="password" placeholder="🔒 Пароль" required>
+                <input type="password" name="password" placeholder="Пароль" required>
             </div>
             
             <button type="submit">Авторизоваться</button>
         </form>
-
-        <a href="#" class="forgot-pass" onclick="alert('Обратитесь к администратору системы.')">Забыли пароль?</a>
     </div>
+
+    <script>
+        function toggleTheme() {
+            const body = document.body;
+            const currentTheme = body.getAttribute('data-theme');
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            body.setAttribute('data-theme', newTheme);
+            localStorage.setItem('stella_theme', newTheme);
+        }
+        const savedTheme = localStorage.getItem('stella_theme') || 'dark';
+        document.body.setAttribute('data-theme', savedTheme);
+    </script>
 </body>
 </html>"""
 
-def render_admin_page():
-    return """<!DOCTYPE html>
-<html lang="ru">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>STELLA SYSTEM - PANEL</title>
-    <style>
-        body { 
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
-            background: #070a13; 
-            background-image: radial-gradient(circle at 50% 30%, #111a2e 0%, #050811 100%);
-            color: #f8fafc; 
-            padding: 20px; 
-            margin: 0; 
-            display: flex; 
-            justify-content: center; 
-            align-items: center;
-            min-height: 100vh;
-        }
-        .card { 
-            background: rgba(15, 23, 42, 0.75); 
-            backdrop-filter: blur(16px);
-            border: 1px solid rgba(56, 189, 248, 0.3);
-            padding: 24px; 
-            border-radius: 20px; 
-            width: 100%; 
-            max-width: 400px; 
-            box-shadow: 0 0 30px rgba(14, 165, 233, 0.15); 
-        }
-        .header { text-align: center; margin-bottom: 20px; }
-        .header h1 { font-size: 20px; letter-spacing: 2px; color: #38bdf8; }
-        h2 { text-align: center; font-size: 16px; margin-bottom: 15px; color: #cbd5e1; }
-        input, button { 
-            width: 100%; 
-            padding: 12px; 
-            margin-bottom: 14px; 
-            border-radius: 8px; 
-            border: 1px solid rgba(100, 116, 139, 0.4); 
-            background: rgba(15, 23, 42, 0.8); 
-            color: #fff; 
-            box-sizing: border-box; 
-            font-size: 14px;
-        }
-        button { 
-            background: linear-gradient(135deg, #0284c7, #0369a1); 
-            border: none; 
-            font-weight: bold; 
-            cursor: pointer; 
-        }
-        .logout { 
-            background: rgba(239, 68, 68, 0.2); 
-            border: 1px solid rgba(239, 68, 68, 0.4);
-            margin-top: 10px; 
-            text-align: center; 
-            display: block; 
-            text-decoration: none; 
-            padding: 12px; 
-            border-radius: 8px; 
-            color: #fca5a5; 
-            font-weight: bold; 
-        }
-    </style>
-</head>
-<body>
-    <div class="card">
-        <div class="header">
-            <h1>STELLA SYSTEM</h1>
-            <p style="color: #4ade80; font-size: 13px; margin-top: 6px;">✔ Панель активна</p>
-        </div>
-        
-        <h2>Управление ботами</h2>
-        <form method="POST" action="/add-bot">
-            <input type="text" name="bot_name" placeholder="Имя бота" required>
-            <input type="text" name="bot_token" placeholder="Токен бота от BotFather" required>
-            <input type="password" name="pin_code" placeholder="ПИН-код (4 цифры)" pattern="[0-9]{4}" maxlength="4" inputmode="numeric" required>
-            <button type="submit">Запустить бота</button>
-        </form>
-        
-        <a href="/" class="logout">Выйти</a>
-    </div>
-</body>
-</html>"""
-
-@app.get("/", response_class=HTMLResponse)
-async def index():
-    return render_login_page()
-
-@app.post("/login", response_class=HTMLResponse)
-async def login(username: str = Form(...), password: str = Form(...)):
-    return render_admin_page()
-
-@app.post("/add-bot", response_class=HTMLResponse)
-async def add_bot(bot_name: str = Form(...), bot_token: str = Form(...), pin_code: str = Form(...)):
-    if len(pin_code) != 4 or not pin_code.isdigit():
-        return "<body style='background:#070a13;color:#fff;text-align:center;padding-top:50px;'><h2 style='color:#ef4444;'>❌ Ошибка! ПИН-код должен быть из 4 цифр.</h2><a href='/' style='color:#38bdf8;'>Назад</a></body>"
-    
-    if pin_code != SECRET_PIN:
-        return "<body style='background:#070a13;color:#fff;text-align:center;padding-top:50px;'><h2 style='color:#ef4444;'>❌ Неверный ПИН-код!</h2><a href='/' style='color:#38bdf8;'>Назад</a></body>"
-    
-    return f"<body style='background:#070a13;color:#fff;text-align:center;padding-top:50px;'><h2 style='color:#4ade80;'>🚀 Бот '{bot_name}' запущен в STELLA SYSTEM!</h2><a href='/' style='color:#38bdf8;'>Назад в панель</a></body>"
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+def render_admin_page
