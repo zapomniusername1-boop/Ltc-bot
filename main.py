@@ -10,6 +10,8 @@ SECRET_PIN = "7777"
 # Базы данных
 CITIES_DB = []
 DISTRICTS_DB = []
+CATEGORIES_DB = []
+PRODUCTS_DB = []
 BOT_CONFIG = {"name": "Не привязан", "token": ""}
 
 BASE_TEMPLATE = """<!DOCTYPE html>
@@ -141,7 +143,7 @@ BASE_TEMPLATE = """<!DOCTYPE html>
             padding: 11px; border-radius: 10px; color: #fca5a5; font-weight: 600; font-size: 14px;
         }
 
-        /* Всплывающее белое окно уведомления (успех / ошибка) */
+        /* Всплывающее белое окно уведомления */
         #status-popup {
             display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(5, 8, 19, 0.7); z-index: 3000; justify-content: center; align-items: center;
@@ -168,7 +170,6 @@ BASE_TEMPLATE = """<!DOCTYPE html>
         __CONTENT__
     </div>
 
-    <!-- Белое модальное окно статуса -->
     <div id="status-popup">
         <div class="popup-box">
             <div id="popup-icon" class="popup-icon"></div>
@@ -248,6 +249,8 @@ def get_page(content: str, title: str = "STELLA SYSTEM", show_intro: bool = Fals
                 <a href="/bot-settings">🤖 Настройки бота</a>
                 <a href="/cities">🏙️ Управление городами</a>
                 <a href="/districts">📍 Управление районами</a>
+                <a href="/categories">📂 Категории</a>
+                <a href="/products">📦 Товары и ссылки</a>
                 <a href="/" style="color: #fca5a5;">🚪 Выход</a>
             </div>
         </div>
@@ -397,7 +400,6 @@ async def districts_page(status: str = None):
                 <span style="font-size: 13px; font-weight: 600;">{d['district']}</span>
                 <span style="font-size: 11px; color: var(--text-muted);">Город: {d['city']}</span>
             </div>
-            <div style="font-size: 11px; color: #38bdf8; word-break: break-all;">🔗 Ссылка выдачи: <a href="{d['product_link']}" target="_blank" style="color: #38bdf8;">{d['product_link']}</a></div>
         </div>
     """ for d in DISTRICTS_DB]) if DISTRICTS_DB else '<p style="font-size: 11px; color: var(--text-muted); text-align: center;">Районы еще не добавлены</p>'
 
@@ -414,18 +416,17 @@ async def districts_page(status: str = None):
         </div>
 
         <form method="POST" action="/add-district" style="background: var(--input-bg); padding: 12px; border-radius: 12px; border: 1px solid var(--border-color); margin-bottom: 16px;">
-            <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 8px; font-weight: 600;">➕ ДОБАВИТЬ РАЙОН И ССЫЛКУ:</p>
+            <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 8px; font-weight: 600;">➕ ДОБАВИТЬ РАЙОН:</p>
             <select name="city" required style="margin-bottom: 8px;">
                 <option value="" disabled selected>Выберите город</option>
                 {city_options}
             </select>
             <input type="text" name="district_name" placeholder="Название района" required style="margin-bottom: 8px;">
-            <input type="url" name="product_link" placeholder="Ссылка на товар (выдача после оплаты)" required style="margin-bottom: 8px;">
             <button type="submit">Сохранить район</button>
         </form>
 
         <div style="margin-bottom: 14px;">
-            <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 6px; font-weight: 600;">СПИСОК РАЙОНОВ И ССЫЛОК:</p>
+            <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 6px; font-weight: 600;">СПИСОК РАЙОНОВ:</p>
             <div style="max-height: 180px; overflow-y: auto;">
                 {list_html}
             </div>
@@ -437,11 +438,133 @@ async def districts_page(status: str = None):
     return get_page(content, "STELLA SYSTEM - DISTRICTS", show_intro=False, show_full_nav=True)
 
 @app.post("/add-district", response_class=HTMLResponse)
-async def add_district(city: str = Form(...), district_name: str = Form(...), product_link: str = Form(...)):
-    if city and district_name and product_link:
-        DISTRICTS_DB.append({"city": city, "district": district_name, "product_link": product_link, "items": 0, "usd": 0, "ltc": 0})
+async def add_district(city: str = Form(...), district_name: str = Form(...)):
+    if city and district_name:
+        DISTRICTS_DB.append({"city": city, "district": district_name, "items": 0, "usd": 0, "ltc": 0})
         return RedirectResponse(url="/districts?status=success", status_code=303)
     return RedirectResponse(url="/districts?status=error", status_code=303)
+
+# РАЗДЕЛ КАГОРИЙ
+@app.get("/categories", response_class=HTMLResponse)
+async def categories_page(status: str = None):
+    list_html = "".join([f"""
+        <div style="display: flex; justify-content: space-between; align-items: center; background: var(--input-bg); padding: 10px 12px; border-radius: 8px; margin-bottom: 8px; border: 1px solid var(--input-border);">
+            <span style="font-size: 13px; font-weight: 600;">📂 {cat}</span>
+        </div>
+    """ for cat in CATEGORIES_DB]) if CATEGORIES_DB else '<p style="font-size: 11px; color: var(--text-muted); text-align: center;">Категории не добавлены</p>'
+
+    popup_script = ""
+    if status == "success":
+        popup_script = "<script>window.addEventListener('load', () => showPopup(true, 'Изменено'));</script>"
+    elif status == "error":
+        popup_script = "<script>window.addEventListener('load', () => showPopup(false, 'Ошибка'));</script>"
+
+    content = f"""
+        <div style="text-align:center; margin-bottom: 14px;">
+            <p style="color: #38bdf8; font-size: 11px; letter-spacing: 2px; font-weight: 600;">КАТАЛОГ</p>
+            <h2 style="font-size: 18px; margin-top: 2px;">Управление категориями</h2>
+        </div>
+
+        <form method="POST" action="/add-category" style="background: var(--input-bg); padding: 12px; border-radius: 12px; border: 1px solid var(--border-color); margin-bottom: 16px;">
+            <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 8px; font-weight: 600;">➕ ДОБАВИТЬ КАТЕГОРИЮ:</p>
+            <input type="text" name="category_name" placeholder="Название категории" required style="margin-bottom: 8px;">
+            <button type="submit">Сохранить категорию</button>
+        </form>
+
+        <div style="margin-bottom: 14px;">
+            <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 6px; font-weight: 600;">СПИСОК КАТЕГОРИЙ:</p>
+            <div style="max-height: 160px; overflow-y: auto;">
+                {list_html}
+            </div>
+        </div>
+
+        <a href='/dashboard' class='logout' style='background: #0284c7; color: #fff; border: none; text-decoration: none;'>← В дашборд</a>
+        {popup_script}
+    """
+    return get_page(content, "STELLA SYSTEM - CATEGORIES", show_intro=False, show_full_nav=True)
+
+@app.post("/add-category", response_class=HTMLResponse)
+async def add_category(category_name: str = Form(...)):
+    if category_name and category_name not in CATEGORIES_DB:
+        CATEGORIES_DB.append(category_name)
+        return RedirectResponse(url="/categories?status=success", status_code=303)
+    return RedirectResponse(url="/categories?status=error", status_code=303)
+
+# РАЗДЕЛ ТОВАРОВ И ССЫЛОК ВЫДАЧИ
+@app.get("/products", response_class=HTMLResponse)
+async def products_page(status: str = None):
+    cat_options = "".join([f'<option value="{c}">{c}</option>' for c in CATEGORIES_DB])
+    city_options = "".join([f'<option value="{c}">{c}</option>' for c in CITIES_DB])
+    district_options = "".join([f'<option value="{d["district"]}">{d["district"]} ({d["city"]})</option>' for d in DISTRICTS_DB])
+
+    list_html = "".join([f"""
+        <div style="background: var(--input-bg); padding: 10px 12px; border-radius: 8px; margin-bottom: 8px; border: 1px solid var(--input-border);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                <span style="font-size: 13px; font-weight: 600;">📦 {p['name']}</span>
+                <span style="font-size: 11px; color: #38bdf8;">${p['price']}</span>
+            </div>
+            <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Категория: {p['category']} | Район: {p['district']} ({p['city']})</div>
+            <div style="font-size: 11px; color: #4ade80; word-break: break-all;">🔗 Ссылка выдачи: <a href="{p['product_link']}" target="_blank" style="color: #4ade80;">{p['product_link']}</a></div>
+        </div>
+    """ for p in PRODUCTS_DB]) if PRODUCTS_DB else '<p style="font-size: 11px; color: var(--text-muted); text-align: center;">Товары еще не добавлены</p>'
+
+    popup_script = ""
+    if status == "success":
+        popup_script = "<script>window.addEventListener('load', () => showPopup(true, 'Изменено'));</script>"
+    elif status == "error":
+        popup_script = "<script>window.addEventListener('load', () => showPopup(false, 'Ошибка'));</script>"
+
+    content = f"""
+        <div style="text-align:center; margin-bottom: 14px;">
+            <p style="color: #38bdf8; font-size: 11px; letter-spacing: 2px; font-weight: 600;">КАТАЛОГ</p>
+            <h2 style="font-size: 18px; margin-top: 2px;">Товары и ссылки выдачи</h2>
+        </div>
+
+        <form method="POST" action="/add-product" style="background: var(--input-bg); padding: 12px; border-radius: 12px; border: 1px solid var(--border-color); margin-bottom: 16px;">
+            <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 8px; font-weight: 600;">➕ ДОБАВИТЬ ТОВАР:</p>
+            <select name="category" required style="margin-bottom: 8px;">
+                <option value="" disabled selected>Выберите категорию</option>
+                {cat_options}
+            </select>
+            <select name="city" required style="margin-bottom: 8px;">
+                <option value="" disabled selected>Выберите город</option>
+                {city_options}
+            </select>
+            <select name="district" required style="margin-bottom: 8px;">
+                <option value="" disabled selected>Выберите район</option>
+                {district_options}
+            </select>
+            <input type="text" name="product_name" placeholder="Название товара" required style="margin-bottom: 8px;">
+            <input type="number" step="0.01" name="price" placeholder="Цена ($)" required style="margin-bottom: 8px;">
+            <input type="url" name="product_link" placeholder="Ссылка на выдачу после оплаты" required style="margin-bottom: 8px;">
+            <button type="submit">Сохранить товар</button>
+        </form>
+
+        <div style="margin-bottom: 14px;">
+            <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 6px; font-weight: 600;">СПИСОК ТОВАРОВ:</p>
+            <div style="max-height: 180px; overflow-y: auto;">
+                {list_html}
+            </div>
+        </div>
+
+        <a href='/dashboard' class='logout' style='background: #0284c7; color: #fff; border: none; text-decoration: none;'>← В дашборд</a>
+        {popup_script}
+    """
+    return get_page(content, "STELLA SYSTEM - PRODUCTS", show_intro=False, show_full_nav=True)
+
+@app.post("/add-product", response_class=HTMLResponse)
+async def add_product(category: str = Form(...), city: str = Form(...), district: str = Form(...), product_name: str = Form(...), price: float = Form(...), product_link: str = Form(...)):
+    if category and city and district and product_name and product_link:
+        PRODUCTS_DB.append({
+            "category": category,
+            "city": city,
+            "district": district,
+            "name": product_name,
+            "price": price,
+            "product_link": product_link
+        })
+        return RedirectResponse(url="/products?status=success", status_code=303)
+    return RedirectResponse(url="/products?status=error", status_code=303)
 
 async def render_main_dashboard(intro: bool = True):
     labels = [d['district'] for d in DISTRICTS_DB] if DISTRICTS_DB else ["Нет районов"]
@@ -481,7 +604,7 @@ async def render_main_dashboard(intro: bool = True):
         <div style="background: var(--input-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 12px; margin-bottom: 14px;">
             <div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 6px;">
                 <span style="font-size: 11px; color: var(--text-muted);">Районы (товаров куплено):</span>
-                <a href="/districts" style="font-size: 10px; color: #38bdf8; text-decoration: none; font-weight: 600;">⚙️ Изменить</a>
+                <a href="/products" style="font-size: 10px; color: #38bdf8; text-decoration: none; font-weight: 600;">⚙️ Товары</a>
             </div>
             <div style="background: rgba(15, 23, 42, 0.5); padding: 6px; border-radius: 8px; text-align: center; margin-bottom: 8px;">
                 <span style="font-size: 9px; color: var(--text-muted);" id="label-district">ВЫБРАННЫЙ РАЙОН: ВСЕ</span>
