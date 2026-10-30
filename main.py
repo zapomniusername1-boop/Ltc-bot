@@ -13,11 +13,13 @@ BASE_TEMPLATE = """<!DOCTYPE html>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>__TITLE__</title>
+    <!-- Подключаем библиотеку для интерактивных графиков Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root {
             --bg-color: #070a13;
             --bg-gradient: radial-gradient(circle at 50% 30%, #111a2e 0%, #050811 100%);
-            --card-bg: rgba(15, 23, 42, 0.75);
+            --card-bg: rgba(15, 23, 42, 0.85);
             --border-color: rgba(56, 189, 248, 0.3);
             --text-color: #f8fafc;
             --text-muted: #94a3b8;
@@ -27,7 +29,7 @@ BASE_TEMPLATE = """<!DOCTYPE html>
         [data-theme="light"] {
             --bg-color: #f1f5f9;
             --bg-gradient: radial-gradient(circle at 50% 30%, #e2e8f0 0%, #cbd5e1 100%);
-            --card-bg: rgba(255, 255, 255, 0.85);
+            --card-bg: rgba(255, 255, 255, 0.9);
             --border-color: rgba(2, 132, 199, 0.3);
             --text-color: #0f172a;
             --text-muted: #475569;
@@ -160,7 +162,7 @@ BASE_TEMPLATE = """<!DOCTYPE html>
             background: var(--card-bg); 
             backdrop-filter: blur(16px);
             border: 1px solid var(--border-color);
-            padding: 24px; 
+            padding: 20px; 
             border-radius: 20px; 
             width: 100%; 
             max-width: 420px; 
@@ -276,13 +278,13 @@ def get_page(content: str, title: str = "STELLA SYSTEM", show_intro: bool = Fals
         sidebar_html = """
         <div id="sidebar" class="sidebar">
             <div class="sidebar-header">
-                <h3>Меню</h3>
+                <h3>Управление</h3>
                 <button class="menu-btn" onclick="toggleSidebar()">✕</button>
             </div>
             <div class="sidebar-menu">
-                <a href="#" onclick="alert('Вы уже в панели управления')">🏠 Главная панель</a>
-                <a href="#" onclick="alert('Графика и баланс: Система активна, баланс: 1,450 ST')">📊 Графика и Баланс</a>
-                <a href="#" onclick="alert('Все системные узлы функционируют в штатном режиме')">⚙️ Системные настройки</a>
+                <a href="#" onclick="toggleSidebar()">📊 Статистика и Графика</a>
+                <a href="#" onclick="alert('Режим редактирования бота в разработке')">🤖 Мои боты</a>
+                <a href="#" onclick="alert('Система безопасности работает')">⚙️ Настройки безопасности</a>
                 <a href="/" style="color: #fca5a5;">🚪 Выход</a>
             </div>
         </div>
@@ -301,7 +303,7 @@ def get_page(content: str, title: str = "STELLA SYSTEM", show_intro: bool = Fals
 
     return BASE_TEMPLATE.replace("__TITLE__", title).replace("__CONTENT__", content).replace("__INTRO__", intro_html).replace("__HEADER__", header_html).replace("__SIDEBAR__", sidebar_html)
 
-# Шаг 1: Логин и пароль (с картинкой космоса)
+# Шаг 1: Авторизация
 @app.get("/", response_class=HTMLResponse)
 async def index():
     content = """
@@ -331,7 +333,7 @@ async def verify_pin_page(username: str = Form(...), password: str = Form(...)):
     """
     return get_page(content, "STELLA SYSTEM - PIN", show_intro=False, show_full_nav=False)
 
-# Шаг 3: Панель управления ботами (доступна после правильного ПИН-кода)
+# Шаг 3: Ввод данных бота
 @app.post("/check-pin", response_class=HTMLResponse)
 async def check_pin(username: str = Form(...), pin_code: str = Form(...)):
     if pin_code != SECRET_PIN:
@@ -340,7 +342,7 @@ async def check_pin(username: str = Form(...), pin_code: str = Form(...)):
     content = """
         <div style="text-align:center; margin-bottom: 16px;">
             <p style="color: #4ade80; font-size: 13px; font-weight: 600;">✔ Доступ разрешен</p>
-            <h3 style="margin-top:6px; font-size:16px;">Управление ботами</h3>
+            <h3 style="margin-top:6px; font-size:16px;">Подключение бота</h3>
         </div>
         <form method="POST" action="/add-bot">
             <input type="text" name="bot_name" placeholder="Имя бота" required>
@@ -351,31 +353,119 @@ async def check_pin(username: str = Form(...), pin_code: str = Form(...)):
     """
     return get_page(content, "STELLA SYSTEM - PANEL", show_intro=False, show_full_nav=False)
 
-# Шаг 4: Финал — Анимация STELLA + появление 3 полосок (меню) и дашборда с балансом/графикой внутри!
+# Шаг 4: Финальный дашборд — Анимация STELLA, меню (3 полоски) и Интерактивный График Пополнений
 @app.post("/add-bot", response_class=HTMLResponse)
 async def add_bot(bot_name: str = Form(...), bot_token: str = Form(...)):
-    msg = f"""
-        <div style="text-align:center; padding: 10px 0;">
-            <h2 style='color:#4ade80; margin-bottom: 10px;'>🚀 Успех!</h2>
-            <p style='color:var(--text-color); margin-bottom: 16px;'>Бот <b>'{bot_name}'</b> запущен в систему.</p>
-            
-            <!-- Блок графики и баланса -->
-            <div style="background: var(--input-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 14px; margin-bottom: 16px; text-align: left;">
-                <p style="font-size: 12px; color: var(--text-muted);">АКТИВНЫЙ БАЛАНС СИСТЕМЫ</p>
-                <h3 style="font-size: 20px; color: #38bdf8; margin: 4px 0 12px 0;">1,450.00 ST</h3>
-                <p style="font-size: 12px; color: var(--text-muted);">ТЕЛЕМЕТРИЯ ЯДРА</p>
-                <div style="width: 100%; height: 6px; background: rgba(56, 189, 248, 0.2); border-radius: 3px; margin-top: 6px; overflow: hidden;">
-                    <div style="width: 75%; height: 100%; background: #38bdf8; box-shadow: 0 0 8px #38bdf8;"></div>
-                </div>
-            </div>
-
-            <a href='/check-pin' class='logout' style='background: #0284c7; color: #fff; border: none; text-decoration: none;'>Вернуться к ботам</a>
+    content = f"""
+        <div style="text-align:center; margin-bottom: 12px;">
+            <p style="color: #38bdf8; font-size: 11px; letter-spacing: 2px; font-weight: 600;">СТАТИСТИКА И ГРАФИКА</p>
+            <h2 style="font-size: 18px; margin-top: 2px;">Поступления через бота</h2>
         </div>
+
+        <!-- Информационные карточки баланса (USD + LTC) -->
+        <div style="display: flex; gap: 10px; margin-bottom: 16px;">
+            <div style="flex: 1; background: var(--input-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 10px; text-align: center;">
+                <p style="font-size: 10px; color: var(--text-muted);">ОБЩИЙ БАЛАНС ($)</p>
+                <h3 id="stat-usd" style="font-size: 16px; color: #38bdf8; margin-top: 4px;">$0.00</h3>
+            </div>
+            <div style="flex: 1; background: var(--input-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 10px; text-align: center;">
+                <p style="font-size: 10px; color: var(--text-muted);">ОБЩИЙ БАЛАНС (LTC)</p>
+                <h3 id="stat-ltc" style="font-size: 16px; color: #4ade80; margin-top: 4px;">0.000 LTC</h3>
+            </div>
+        </div>
+
+        <!-- Контейнер с интерактивным графиком -->
+        <div style="background: var(--input-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 12px; margin-bottom: 14px;">
+            <div style="display:flex; justify-shadow: space-between; align-items:center; margin-bottom: 8px;">
+                <span style="font-size: 11px; color: var(--text-muted);">Кликните на точку месяца:</span>
+                <span id="selected-month" style="font-size: 11px; color: #38bdf8; font-weight: 600;">Все месяцы</span>
+            </div>
+            <canvas id="incomeChart" style="max-height: 180px;"></canvas>
+        </div>
+
+        <a href='/' class='logout' style='margin-top: 10px; text-decoration: none;'>Выйти на главную</a>
+
+        <!-- Скрипт построения интерактивного графика -->
+        <script>
+            // Данные пополнений по месяцам (USD и LTC)
+            const monthlyData = [
+                {{ month: 'Июль', usd: 120, ltc: 1.85 }},
+                {{ month: 'Авг', usd: 340, ltc: 5.23 }},
+                {{ month: 'Сент', usd: 210, ltc: 3.10 }},
+                {{ month: 'Окт', usd: 580, ltc: 8.92 }},
+                {{ month: 'Нояб', usd: 890, ltc: 13.69 }},
+                {{ month: 'Дек', usd: 1250, ltc: 19.23 }}
+            ];
+
+            // Расчет общей суммы
+            const totalUSD = monthlyData.reduce((acc, curr) => acc + curr.usd, 0);
+            const totalLTC = monthlyData.reduce((acc, curr) => acc + curr.ltc, 0);
+
+            document.getElementById('stat-usd').innerText = '$' + totalUSD.toLocaleString('en-US', {{minimumFractionDigits: 2}});
+            document.getElementById('stat-ltc').innerText = totalLTC.toFixed(3) + ' LTC';
+
+            const ctx = document.getElementById('incomeChart').getContext('2d');
+            
+            const chart = new Chart(ctx, {{
+                type: 'line',
+                data: {{
+                    labels: monthlyData.map(d => d.month),
+                    datasets: [{{
+                        label: 'Пополнения ($)',
+                        data: monthlyData.map(d => d.usd),
+                        borderColor: '#38bdf8',
+                        backgroundColor: 'rgba(56, 189, 248, 0.15)',
+                        borderWidth: 2.5,
+                        pointBackgroundColor: '#ffffff',
+                        pointBorderColor: '#0284c7',
+                        pointHoverBackgroundColor: '#38bdf8',
+                        pointHoverBorderColor: '#ffffff',
+                        pointRadius: 5,
+                        pointHoverRadius: 8,
+                        fill: true,
+                        tension: 0.35
+                    }}]
+                }},
+                options: {{
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {{
+                        legend: {{ display: false }},
+                        tooltip: {{
+                            callbacks: {{
+                                label: function(context) {{
+                                    const index = context.dataIndex;
+                                    const item = monthlyData[index];
+                                    return ` Доход: $${{item.usd}} | ${{item.ltc}} LTC`;
+                                }}
+                            }}
+                        }}
+                    }},
+                    scales: {{
+                        x: {{
+                            grid: {{ color: 'rgba(255, 255, 255, 0.05)' }},
+                            ticks: {{ color: '#94a3b8', font: {{ size: 10 }} }}
+                        }},
+                        y: {{
+                            grid: {{ color: 'rgba(255, 255, 255, 0.05)' }},
+                            ticks: {{ color: '#94a3b8', font: {{ size: 10 }} }}
+                        }}
+                    }},
+                    onClick: (e, elements) => {{
+                        if (elements.length > 0) {{
+                            const index = elements[0].index;
+                            const item = monthlyData[index];
+                            document.getElementById('selected-month').innerText = item.month;
+                            document.getElementById('stat-usd').innerText = '$' + item.usd.toLocaleString('en-US', {{minimumFractionDigits: 2}});
+                            document.getElementById('stat-ltc').innerText = item.ltc.toFixed(3) + ' LTC';
+                        }}
+                    }}
+                }}
+            }});
+        </script>
     """
-    # show_intro=True запускает 3-секундную анимацию STELLA, а show_full_nav=True включает 3 полоски (меню) в шапке!
-    return get_page(msg, "STELLA SYSTEM - DASHBOARD", show_intro=True, show_full_nav=True)
+    return get_page(content, "STELLA SYSTEM - DASHBOARD", show_intro=True, show_full_nav=True)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
-
