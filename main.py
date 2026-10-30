@@ -7,7 +7,6 @@ app = FastAPI()
 
 SECRET_PIN = "7777"
 
-# Загружаем HTML из отдельных файлов или сдаём встроенный безопасный формат
 def render_login_page():
     return """<!DOCTYPE html>
 <html lang="ru">
@@ -33,7 +32,7 @@ def render_login_page():
         .header-title h1 { font-size: 16px; letter-spacing: 4px; color: #e2e8f0; font-weight: 500; }
         .header-title p { font-size: 10px; letter-spacing: 2px; color: #64748b; margin-top: 4px; }
         .card { 
-            background: rgba(15, 23, 42, 0.65); 
+            background: rgba(15, 23, 42, 0.75); 
             backdrop-filter: blur(16px);
             border: 1px solid rgba(56, 189, 248, 0.3);
             padding: 20px; 
@@ -42,24 +41,14 @@ def render_login_page():
             max-width: 360px; 
             box-shadow: 0 0 30px rgba(14, 165, 233, 0.15); 
         }
-        .banner-container {
+        .banner-img {
             width: 100%;
-            height: 180px;
+            height: auto;
             border-radius: 12px;
             margin-bottom: 20px;
-            overflow: hidden;
             border: 1px solid rgba(255, 255, 255, 0.1);
-            background: url('https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=800&auto=format&fit=crop') center/cover no-repeat;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        .banner-title {
-            font-size: 28px;
-            font-weight: 800;
-            letter-spacing: 6px;
-            color: #ffffff;
-            text-shadow: 0 0 20px rgba(56, 189, 248, 0.8), 0 0 10px rgba(0, 0, 0, 0.8);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+            display: block;
         }
         .input-group { position: relative; margin-bottom: 14px; }
         input { 
@@ -103,9 +92,8 @@ def render_login_page():
     </div>
 
     <div class="card">
-        <div class="banner-container">
-            <div class="banner-title">STELLA</div>
-        </div>
+        <!-- Та самая картинка с Землей и кольцом -->
+        <img src="https://i.ibb.co/689N1pG/stella-banner.jpg" alt="Stella Space" class="banner-img" onerror="this.src='https://images.unsplash.com/photo-1506703719100-a0f3a48c0f86?q=80&w=800&auto=format&fit=crop'">
 
         <form method="POST" action="/login">
             <div class="input-group">
