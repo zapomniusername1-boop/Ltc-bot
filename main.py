@@ -7,15 +7,15 @@ app = FastAPI()
 
 SECRET_PIN = "7777"
 
-def get_page(content: str, title: str = "STELLA SYSTEM") -> str:
-    return f"""<!DOCTYPE html>
+# Обычная многострочная строка БЕЗ f-строки — фигурные скобки CSS не сломают Python!
+BASE_TEMPLATE = """<!DOCTYPE html>
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{title}</title>
+    <title>__TITLE__</title>
     <style>
-        :root {{
+        :root {
             --bg-color: #070a13;
             --bg-gradient: radial-gradient(circle at 50% 30%, #111a2e 0%, #050811 100%);
             --card-bg: rgba(15, 23, 42, 0.75);
@@ -24,8 +24,8 @@ def get_page(content: str, title: str = "STELLA SYSTEM") -> str:
             --text-muted: #94a3b8;
             --input-bg: rgba(15, 23, 42, 0.8);
             --input-border: rgba(100, 116, 139, 0.3);
-        }}
-        [data-theme="light"] {{
+        }
+        [data-theme="light"] {
             --bg-color: #f1f5f9;
             --bg-gradient: radial-gradient(circle at 50% 30%, #e2e8f0 0%, #cbd5e1 100%);
             --card-bg: rgba(255, 255, 255, 0.85);
@@ -34,9 +34,9 @@ def get_page(content: str, title: str = "STELLA SYSTEM") -> str:
             --text-muted: #475569;
             --input-bg: rgba(255, 255, 255, 0.95);
             --input-border: rgba(100, 116, 139, 0.3);
-        }}
-        * {{ box-sizing: border-box; margin: 0; padding: 0; transition: background 0.3s, color 0.3s; }}
-        body {{ 
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; transition: background 0.3s, color 0.3s; }
+        body { 
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
             background: var(--bg-color); 
             background-image: var(--bg-gradient);
@@ -47,12 +47,12 @@ def get_page(content: str, title: str = "STELLA SYSTEM") -> str:
             align-items: center; 
             min-height: 100vh; 
             padding: 20px;
-        }}
-        .header-title {{ text-align: center; margin-bottom: 16px; position: relative; width: 100%; max-width: 360px; }}
-        .header-title h1 {{ font-size: 18px; letter-spacing: 4px; font-weight: 600; color: #38bdf8; }}
-        .header-title p {{ font-size: 11px; letter-spacing: 2px; color: var(--text-muted); margin-top: 4px; }}
+        }
+        .header-title { text-align: center; margin-bottom: 16px; position: relative; width: 100%; max-width: 360px; }
+        .header-title h1 { font-size: 18px; letter-spacing: 4px; font-weight: 600; color: #38bdf8; }
+        .header-title p { font-size: 11px; letter-spacing: 2px; color: var(--text-muted); margin-top: 4px; }
         
-        .theme-toggle {{
+        .theme-toggle {
             position: absolute;
             right: 0;
             top: 0;
@@ -65,9 +65,9 @@ def get_page(content: str, title: str = "STELLA SYSTEM") -> str:
             font-size: 12px;
             font-weight: 600;
             backdrop-filter: blur(10px);
-        }}
+        }
 
-        .card {{ 
+        .card { 
             background: var(--card-bg); 
             backdrop-filter: blur(16px);
             border: 1px solid var(--border-color);
@@ -77,7 +77,7 @@ def get_page(content: str, title: str = "STELLA SYSTEM") -> str:
             max-width: 360px; 
             box-shadow: 0 0 30px rgba(14, 165, 233, 0.15); 
         }
-        .banner-img {{
+        .banner-img {
             width: 100%;
             height: 160px;
             object-fit: cover;
@@ -85,8 +85,8 @@ def get_page(content: str, title: str = "STELLA SYSTEM") -> str:
             margin-bottom: 20px;
             border: 1px solid rgba(255, 255, 255, 0.1);
             display: block;
-        }}
-        input {{ 
+        }
+        input { 
             width: 100%; 
             padding: 13px; 
             margin-bottom: 12px;
@@ -96,9 +96,9 @@ def get_page(content: str, title: str = "STELLA SYSTEM") -> str:
             color: var(--text-color); 
             font-size: 14px;
             outline: none;
-        }}
-        input:focus {{ border-color: #38bdf8; box-shadow: 0 0 10px rgba(56, 189, 248, 0.25); }}
-        button[type="submit"] {{ 
+        }
+        input:focus { border-color: #38bdf8; box-shadow: 0 0 10px rgba(56, 189, 248, 0.25); }
+        button[type="submit"] { 
             width: 100%;
             padding: 13px; 
             margin-top: 4px;
@@ -110,8 +110,8 @@ def get_page(content: str, title: str = "STELLA SYSTEM") -> str:
             font-weight: 600; 
             cursor: pointer; 
             box-shadow: 0 0 15px rgba(2, 132, 199, 0.4);
-        }}
-        .logout {{ 
+        }
+        .logout { 
             background: rgba(239, 68, 68, 0.15); 
             border: 1px solid rgba(239, 68, 68, 0.3);
             margin-top: 12px; 
@@ -123,7 +123,7 @@ def get_page(content: str, title: str = "STELLA SYSTEM") -> str:
             color: #fca5a5; 
             font-weight: 600; 
             font-size: 14px;
-        }}
+        }
     </style>
 </head>
 <body data-theme="dark">
@@ -134,20 +134,23 @@ def get_page(content: str, title: str = "STELLA SYSTEM") -> str:
     </div>
     
     <div class="card">
-        {content}
+        __CONTENT__
     </div>
 
     <script>
-        function toggleTheme() {{
+        function toggleTheme() {
             const body = document.body;
             const newTheme = body.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
             body.setAttribute('data-theme', newTheme);
             localStorage.setItem('stella_theme', newTheme);
-        }}
+        }
         document.body.setAttribute('data-theme', localStorage.getItem('stella_theme') || 'dark');
     </script>
 </body>
 </html>"""
+
+def get_page(content: str, title: str = "STELLA SYSTEM") -> str:
+    return BASE_TEMPLATE.replace("__TITLE__", title).replace("__CONTENT__", content)
 
 @app.get("/", response_class=HTMLResponse)
 async def index():
