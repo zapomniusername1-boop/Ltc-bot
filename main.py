@@ -90,14 +90,64 @@ BASE_TEMPLATE = """<!DOCTYPE html>
             100% { transform: translateY(-40px); opacity: 0; visibility: hidden; }
         }
 
-        .header-title { text-align: center; margin-bottom: 16px; position: relative; width: 100%; max-width: 360px; }
-        .header-title h1 { font-size: 18px; letter-spacing: 4px; font-weight: 600; color: #38bdf8; }
-        .header-title p { font-size: 11px; letter-spacing: 2px; color: var(--text-muted); margin-top: 4px; }
+        .header-container {
+            width: 100%;
+            max-width: 420px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        .header-title h1 { font-size: 16px; letter-spacing: 3px; font-weight: 600; color: #38bdf8; }
+        .header-title p { font-size: 10px; letter-spacing: 2px; color: var(--text-muted); }
         
-        .theme-toggle {
-            position: absolute;
-            right: 0;
+        /* Стили для 3 линий (гамбургер-меню) */
+        .menu-btn {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
+            padding: 8px 10px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* Выдвижное меню */
+        .sidebar {
+            position: fixed;
             top: 0;
+            left: -280px;
+            width: 280px;
+            height: 100%;
+            background: var(--card-bg);
+            backdrop-filter: blur(20px);
+            border-right: 1px solid var(--border-color);
+            z-index: 1000;
+            padding: 24px;
+            transition: left 0.3s ease;
+        }
+        .sidebar.open { left: 0; }
+        .sidebar-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+        }
+        .sidebar-menu a {
+            display: block;
+            color: var(--text-color);
+            text-decoration: none;
+            padding: 12px 0;
+            border-bottom: 1px solid var(--input-border);
+            font-size: 14px;
+            font-weight: 500;
+        }
+        .sidebar-menu a:hover { color: #38bdf8; }
+
+        .theme-toggle {
             background: var(--card-bg);
             border: 1px solid var(--border-color);
             color: var(--text-color);
@@ -106,7 +156,6 @@ BASE_TEMPLATE = """<!DOCTYPE html>
             cursor: pointer;
             font-size: 12px;
             font-weight: 600;
-            backdrop-filter: blur(10px);
         }
 
         .card { 
@@ -116,17 +165,8 @@ BASE_TEMPLATE = """<!DOCTYPE html>
             padding: 24px; 
             border-radius: 20px; 
             width: 100%; 
-            max-width: 360px; 
+            max-width: 420px; 
             box-shadow: 0 0 30px rgba(14, 165, 233, 0.15); 
-        }
-        .banner-img {
-            width: 100%;
-            height: 160px;
-            object-fit: cover;
-            border-radius: 12px;
-            margin-bottom: 20px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            display: block;
         }
         input { 
             width: 100%; 
@@ -171,10 +211,27 @@ BASE_TEMPLATE = """<!DOCTYPE html>
 <body data-theme="dark">
     __INTRO__
     
-    <div class="header-title">
-        <h1>STELLA SYSTEM</h1>
-        <p>ACCESS PORTAL</p>
-        <button class="theme-toggle" onclick="toggleTheme()">🌓 Тема</button>
+    <div class="header-container">
+        <button class="menu-btn" onclick="toggleSidebar()">☰</button>
+        <div class="header-title" style="text-align: center;">
+            <h1>STELLA SYSTEM</h1>
+            <p>ACCESS PORTAL</p>
+        </div>
+        <button class="theme-toggle" onclick="toggleTheme()">🌓</button>
+    </div>
+
+    <!-- Выдвижное меню (сайдбар) -->
+    <div id="sidebar" class="sidebar">
+        <div class="sidebar-header">
+            <h3>Меню</h3>
+            <button class="menu-btn" onclick="toggleSidebar()">✕</button>
+        </div>
+        <div class="sidebar-menu">
+            <a href="/">🏠 Главная / Вход</a>
+            <a href="#" onclick="alert('Раздел телеметрии и графиков в разработке')">📊 Графика и Баланс</a>
+            <a href="#" onclick="alert('Все системы работают стабильно')">⚙️ Системные настройки</a>
+            <a href="/" style="color: #fca5a5;">🚪 Выход</a>
+        </div>
     </div>
     
     <div class="card">
@@ -182,6 +239,9 @@ BASE_TEMPLATE = """<!DOCTYPE html>
     </div>
 
     <script>
+        function toggleSidebar() {
+            document.getElementById('sidebar').classList.toggle('open');
+        }
         function toggleTheme() {
             const body = document.body;
             const newTheme = body.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
@@ -215,11 +275,9 @@ def get_page(content: str, title: str = "STELLA SYSTEM", show_intro: bool = Fals
     
     return BASE_TEMPLATE.replace("__TITLE__", title).replace("__CONTENT__", content).replace("__INTRO__", intro_html)
 
-# Шаг 1: Логин и пароль
 @app.get("/", response_class=HTMLResponse)
 async def index():
     content = """
-        <img src="https://images.unsplash.com/photo-1451187580459-43490279c0fa?q=80&w=800&auto=format&fit=crop" alt="Stella Space" class="banner-img">
         <form method="POST" action="/verify-pin">
             <input type="text" name="username" placeholder="👤 Логин" required>
             <input type="password" name="password" placeholder="🔒 Пароль" required>
@@ -228,7 +286,6 @@ async def index():
     """
     return get_page(content, "STELLA SYSTEM - LOGIN", show_intro=False)
 
-# Шаг 2: Ввод ПИН-кода (без строгих паттернов, вызывающих ошибки)
 @app.post("/verify-pin", response_class=HTMLResponse)
 async def verify_pin_page(username: str = Form(...), password: str = Form(...)):
     content = f"""
@@ -245,7 +302,6 @@ async def verify_pin_page(username: str = Form(...), password: str = Form(...)):
     """
     return get_page(content, "STELLA SYSTEM - PIN", show_intro=False)
 
-# Проверка ПИН-кода: если неверный — сброс на самый первый экран
 @app.post("/check-pin", response_class=HTMLResponse)
 async def check_pin(username: str = Form(...), pin_code: str = Form(...)):
     if pin_code != SECRET_PIN:
@@ -265,7 +321,6 @@ async def check_pin(username: str = Form(...), pin_code: str = Form(...)):
     """
     return get_page(content, "STELLA SYSTEM - PANEL", show_intro=False)
 
-# Шаг 3: Анимация STELLA срабатывает при отправке формы запуска бота (в самом конце)
 @app.post("/add-bot", response_class=HTMLResponse)
 async def add_bot(bot_name: str = Form(...), bot_token: str = Form(...)):
     msg = f"""
@@ -275,7 +330,6 @@ async def add_bot(bot_name: str = Form(...), bot_token: str = Form(...)):
             <a href='/check-pin' class='logout' style='background: #0284c7; color: #fff; border: none; text-decoration: none;'>Назад в панель</a>
         </div>
     """
-    # show_intro=True включает 3-секундную анимацию STELLA на финальном экране!
     return get_page(msg, "STELLA SYSTEM - STATUS", show_intro=True)
 
 if __name__ == "__main__":
