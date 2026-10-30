@@ -7,7 +7,6 @@ app = FastAPI()
 
 SECRET_PIN = "7777"
 
-# Обычная многострочная строка БЕЗ f-строки — фигурные скобки CSS не сломают Python!
 BASE_TEMPLATE = """<!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -47,7 +46,51 @@ BASE_TEMPLATE = """<!DOCTYPE html>
             align-items: center; 
             min-height: 100vh; 
             padding: 20px;
+            overflow-x: hidden;
         }
+        
+        /* Интро-анимация (Splash Screen) */
+        #intro-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #070a13;
+            background-image: radial-gradient(circle at 50% 30%, #111a2e 0%, #050811 100%);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+            transition: opacity 0.6s ease, visibility 0.6s ease;
+        }
+        .intro-content {
+            text-align: center;
+            animation: riseUpAndFade 1.4s cubic-bezier(0.77, 0, 0.175, 1) forwards;
+        }
+        .intro-title {
+            font-size: 32px;
+            font-weight: 700;
+            letter-spacing: 10px;
+            color: #ffffff;
+            text-shadow: 0 0 20px rgba(56, 189, 248, 0.6);
+            margin-bottom: 8px;
+        }
+        .intro-line {
+            width: 50px;
+            height: 2px;
+            background: #38bdf8;
+            margin: 0 auto;
+            box-shadow: 0 0 10px #38bdf8;
+        }
+
+        @keyframes riseUpAndFade {
+            0% { transform: translateY(0); opacity: 1; }
+            70% { transform: translateY(-30px); opacity: 1; }
+            100% { transform: translateY(-60px); opacity: 0; visibility: hidden; }
+        }
+
         .header-title { text-align: center; margin-bottom: 16px; position: relative; width: 100%; max-width: 360px; }
         .header-title h1 { font-size: 18px; letter-spacing: 4px; font-weight: 600; color: #38bdf8; }
         .header-title p { font-size: 11px; letter-spacing: 2px; color: var(--text-muted); margin-top: 4px; }
@@ -127,6 +170,8 @@ BASE_TEMPLATE = """<!DOCTYPE html>
     </style>
 </head>
 <body data-theme="dark">
+    __INTRO__
+    
     <div class="header-title">
         <h1>STELLA SYSTEM</h1>
         <p>ACCESS PORTAL</p>
@@ -145,12 +190,32 @@ BASE_TEMPLATE = """<!DOCTYPE html>
             localStorage.setItem('stella_theme', newTheme);
         }
         document.body.setAttribute('data-theme', localStorage.getItem('stella_theme') || 'dark');
+
+        // Убираем заставку через 1.3 секунды после загрузки панели
+        window.addEventListener('load', () => {
+            const intro = document.getElementById('intro-screen');
+            if (intro) {
+                setTimeout(() => {
+                    intro.style.opacity = '0';
+                    setTimeout(() => intro.remove(), 600);
+                }, 900);
+            }
+        });
     </script>
 </body>
 </html>"""
 
-def get_page(content: str, title: str = "STELLA SYSTEM") -> str:
-    return BASE_TEMPLATE.replace("__TITLE__", title).replace("__CONTENT__", content)
+def get_page(content: str, title: str = "STELLA SYSTEM", show_intro: bool = False) -> str:
+    intro_html = """
+    <div id="intro-screen">
+        <div class="intro-content">
+            <div class="intro-title">STELLA</div>
+            <div class="intro-line"></div>
+        </div>
+    </div>
+    """ if show_intro else ""
+    
+    return BASE_TEMPLATE.replace("__TITLE__", title).replace("__CONTENT__", content).replace("__INTRO__", intro_html)
 
 @app.get("/", response_class=HTMLResponse)
 async def index():
@@ -162,7 +227,7 @@ async def index():
             <button type="submit">Авторизоваться</button>
         </form>
     """
-    return get_page(content, "STELLA SYSTEM - LOGIN")
+    return get_page(content, "STELLA SYSTEM - LOGIN", show_intro=False)
 
 @app.post("/login", response_class=HTMLResponse)
 async def login(username: str = Form(...), password: str = Form(...)):
@@ -179,7 +244,8 @@ async def login(username: str = Form(...), password: str = Form(...)):
         </form>
         <a href="/" class="logout">Выйти</a>
     """
-    return get_page(content, "STELLA SYSTEM - PANEL")
+    # show_intro=True включает анимацию только при переходе на страницу панели!
+    return get_page(content, "STELLA SYSTEM - PANEL", show_intro=True)
 
 @app.post("/add-bot", response_class=HTMLResponse)
 async def add_bot(bot_name: str = Form(...), bot_token: str = Form(...), pin_code: str = Form(...)):
@@ -190,7 +256,7 @@ async def add_bot(bot_name: str = Form(...), bot_token: str = Form(...), pin_cod
     else:
         msg = f"<h2 style='color:#4ade80; text-align:center;'>🚀 Успех!</h2><p style='text-align:center; margin:10px 0;'>Бот <b>'{bot_name}'</b> запущен в STELLA SYSTEM!</p><a href='/' class='logout' style='margin-top:20px;'>Назад в панель</a>"
     
-    return get_page(msg, "STELLA SYSTEM - STATUS")
+    return get_page(msg, "STELLA SYSTEM - STATUS", show_intro=False)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
