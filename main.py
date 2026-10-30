@@ -7,7 +7,6 @@ app = FastAPI()
 
 SECRET_PIN = "7777"
 
-# База данных районов с указанием продаж в USD, LTC и количеством проданных товаров
 CITIES_DB = [
     {"city": "Кишинев", "district": "Центр", "sales": "$450", "items": 34, "usd": 450, "ltc": 6.92},
     {"city": "Кишинев", "district": "Рышкановка", "sales": "$320", "items": 24, "usd": 320, "ltc": 4.92},
@@ -321,50 +320,104 @@ async def add_district(city: str = Form(...), district_name: str = Form(...)):
 async def render_main_dashboard(intro: bool = True):
     dashboard_content = """
         <div style="text-align:center; margin-bottom: 12px;">
-            <p style="color: #38bdf8; font-size: 11px; letter-spacing: 2px; font-weight: 600;">АНАЛИТИКА ПО РАЙОНАМ</p>
-            <h2 style="font-size: 18px; margin-top: 2px;">Продажи по локациям</h2>
+            <p style="color: #38bdf8; font-size: 11px; letter-spacing: 2px; font-weight: 600;">АНАЛИТИКА СИСТЕМЫ</p>
+            <h2 style="font-size: 18px; margin-top: 2px;">Доходы и Районы</h2>
         </div>
 
-        <!-- Карточки с динамическим отображением данных при клике на район -->
-        <div style="display: flex; gap: 10px; margin-bottom: 14px;">
-            <div style="flex: 1; background: var(--input-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 10px; text-align: center;">
-                <p style="font-size: 10px; color: var(--text-muted);" id="label-district">ВЫБРАННЫЙ РАЙОН</p>
-                <h3 id="stat-sales" style="font-size: 15px; color: #38bdf8; margin-top: 4px;">Все районы</h3>
-            </div>
-            <div style="flex: 1; background: var(--input-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 10px; text-align: center;">
-                <p style="font-size: 10px; color: var(--text-muted);">КУПЛЕНО ТОВАРОВ</p>
-                <h3 id="stat-items" style="font-size: 16px; color: #4ade80; margin-top: 4px;">128 шт</h3>
-            </div>
-        </div>
-
-        <!-- График районов (столбцы вверх) -->
+        <!-- 1. График доходов по месяцам -->
         <div style="background: var(--input-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 12px; margin-bottom: 14px;">
-            <div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 8px;">
-                <span style="font-size: 11px; color: var(--text-muted);">Нажмите на столбец района:</span>
-                <button onclick="toggleModal(true)" style="width: auto; padding: 4px 8px; font-size: 11px; background: #0284c7;">⚙️ Добавить</button>
+            <div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 6px;">
+                <span style="font-size: 11px; color: var(--text-muted);">Доход по месяцам (USD / LTC):</span>
+                <span id="selected-month" style="font-size: 11px; color: #38bdf8; font-weight: 600;">Все</span>
             </div>
-            <canvas id="districtChart" style="max-height: 160px;"></canvas>
+            <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+                <div style="flex: 1; background: rgba(56, 189, 248, 0.08); padding: 6px; border-radius: 8px; text-align: center;">
+                    <span style="font-size: 9px; color: var(--text-muted);">БАЛАНС USD:</span>
+                    <div id="stat-usd" style="font-size: 13px; color: #38bdf8; font-weight: 600;">$3,290.00</div>
+                </div>
+                <div style="flex: 1; background: rgba(74, 222, 128, 0.08); padding: 6px; border-radius: 8px; text-align: center;">
+                    <span style="font-size: 9px; color: var(--text-muted);">БАЛАНС LTC:</span>
+                    <div id="stat-ltc" style="font-size: 13px; color: #4ade80; font-weight: 600;">50.61 LTC</div>
+                </div>
+            </div>
+            <canvas id="incomeChart" style="max-height: 120px;"></canvas>
+        </div>
+
+        <!-- 2. График районов (столбцы вверх) -->
+        <div style="background: var(--input-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 12px; margin-bottom: 14px;">
+            <div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 6px;">
+                <span style="font-size: 11px; color: var(--text-muted);">Районы (товаров куплено):</span>
+                <button onclick="toggleModal(true)" style="width: auto; padding: 3px 6px; font-size: 10px; background: #0284c7;">⚙️ Район</button>
+            </div>
+            <div style="background: rgba(15, 23, 42, 0.5); padding: 6px; border-radius: 8px; text-align: center; margin-bottom: 8px;">
+                <span style="font-size: 9px; color: var(--text-muted);" id="label-district">ВЫБРАННЫЙ РАЙОН: ВСЕ</span>
+                <div id="stat-items" style="font-size: 13px; color: #38bdf8; font-weight: 600;">128 товаров</div>
+            </div>
+            <canvas id="districtChart" style="max-height: 130px;"></canvas>
         </div>
 
         <a href='/' class='logout' style='margin-top: 8px; text-decoration: none;'>Выйти</a>
 
         <script>
-            // Передаем список районов из Python в JS
+            // Данные доходов по месяцам
+            const monthlyData = [
+                { month: 'Июль', usd: 120, ltc: 1.85 },
+                { month: 'Авг', usd: 340, ltc: 5.23 },
+                { month: 'Сент', usd: 210, ltc: 3.10 },
+                { month: 'Окт', usd: 580, ltc: 8.92 },
+                { month: 'Нояб', usd: 890, ltc: 13.69 },
+                { month: 'Дек', usd: 1250, ltc: 19.23 }
+            ];
+
+            const ctxIncome = document.getElementById('incomeChart').getContext('2d');
+            new Chart(ctxIncome, {
+                type: 'line',
+                data: {
+                    labels: monthlyData.map(d => d.month),
+                    datasets: [{
+                        data: monthlyData.map(d => d.usd),
+                        borderColor: '#38bdf8',
+                        backgroundColor: 'rgba(56, 189, 248, 0.15)',
+                        borderWidth: 2,
+                        pointBackgroundColor: '#ffffff',
+                        pointRadius: 4,
+                        fill: true,
+                        tension: 0.35
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 9 } } },
+                        y: { grid: { color: 'rgba(255, 255, 255, 0.05)' }, ticks: { color: '#94a3b8', font: { size: 9 } } }
+                    },
+                    onClick: (e, elements) => {
+                        if (elements.length > 0) {
+                            const item = monthlyData[elements[0].index];
+                            document.getElementById('selected-month').innerText = item.month;
+                            document.getElementById('stat-usd').innerText = '$' + item.usd.toLocaleString();
+                            document.getElementById('stat-ltc').innerText = item.ltc.toFixed(2) + ' LTC';
+                        }
+                    }
+                }
+            });
+
+            // Данные районов (столбцы)
             const districtsData = __DISTRICTS_JSON__;
 
-            const ctx = document.getElementById('districtChart').getContext('2d');
-            const districtChart = new Chart(ctx, {
+            const ctxDistrict = document.getElementById('districtChart').getContext('2d');
+            new Chart(ctxDistrict, {
                 type: 'bar',
                 data: {
                     labels: districtsData.map(d => d.district),
                     datasets: [{
-                        label: 'Продано товаров ($)',
-                        data: districtsData.map(d => d.usd),
+                        data: districtsData.map(d => d.items),
                         backgroundColor: 'rgba(56, 189, 248, 0.6)',
                         borderColor: '#38bdf8',
-                        borderWidth: 1.5,
-                        borderRadius: 6,
-                        hoverBackgroundColor: '#38bdf8'
+                        borderWidth: 1,
+                        borderRadius: 4
                     }]
                 },
                 options: {
@@ -376,28 +429,20 @@ async def render_main_dashboard(intro: bool = True):
                             callbacks: {
                                 label: function(context) {
                                     const item = districtsData[context.dataIndex];
-                                    return ` Выручка: $${item.usd} (${item.ltc} LTC) | Товаров: ${item.items} шт`;
+                                    return ` Товаров: ${item.items} шт | Выручка: $${item.usd}`;
                                 }
                             }
                         }
                     },
                     scales: {
-                        x: { 
-                            grid: { display: false }, 
-                            ticks: { color: '#94a3b8', font: { size: 10 } } 
-                        },
-                        y: { 
-                            grid: { color: 'rgba(255, 255, 255, 0.05)' }, 
-                            ticks: { color: '#94a3b8', font: { size: 10 } } 
-                        }
+                        x: { grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 9 } } },
+                        y: { grid: { color: 'rgba(255, 255, 255, 0.05)' }, ticks: { color: '#94a3b8', font: { size: 9 } } }
                     },
                     onClick: (e, elements) => {
                         if (elements.length > 0) {
-                            const index = elements[0].index;
-                            const item = districtsData[index];
-                            document.getElementById('label-district').innerText = item.district.toUpperCase();
-                            document.getElementById('stat-sales').innerText = '$' + item.usd + ' / ' + item.ltc + ' LTC';
-                            document.getElementById('stat-items').innerText = item.items + ' шт';
+                            const item = districtsData[elements[0].index];
+                            document.getElementById('label-district').innerText = 'РАЙОН: ' + item.district.toUpperCase();
+                            document.getElementById('stat-items').innerText = item.items + ' товаров (л-в: $' + item.usd + ')';
                         }
                     }
                 }
