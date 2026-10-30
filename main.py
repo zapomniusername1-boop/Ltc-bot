@@ -7,10 +7,10 @@ app = FastAPI()
 
 SECRET_PIN = "7777"
 
-# Временная память для добавленных районов (в реальном проекте сохраняется в базу)
+# База данных районов (названия теперь корректно обернуты в строки)
 CITIES_DB = [
-    {"city": "Кишинев", "district": Центр, "sales": "$450"},
-    {"city": "Кишинев", "district": Рышкановка, "sales": "$320"},
+    {"city": "Кишинев", "district": "Центр", "sales": "$450"},
+    {"city": "Кишинев", "district": "Рышкановка", "sales": "$320"},
     {"city": "Бельцы", "district": "БАМ", "sales": "$190"}
 ]
 
@@ -20,7 +20,6 @@ BASE_TEMPLATE = """<!DOCTYPE html>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>__TITLE__</title>
-    <!-- Подключаем Chart.js для графиков -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root {
@@ -144,7 +143,6 @@ BASE_TEMPLATE = """<!DOCTYPE html>
             padding: 11px; border-radius: 10px; color: #fca5a5; font-weight: 600; font-size: 14px;
         }
 
-        /* Модальное окно */
         .modal {
             display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(5, 8, 19, 0.8); z-index: 2000; justify-content: center; align-items: center;
@@ -165,7 +163,6 @@ BASE_TEMPLATE = """<!DOCTYPE html>
         __CONTENT__
     </div>
 
-    <!-- Модальное окно добавления района -->
     <div id="districtModal" class="modal">
         <div class="modal-content">
             <h3 style="margin-bottom: 14px; font-size: 16px; color: #38bdf8;">➕ Добавить район</h3>
@@ -264,7 +261,6 @@ def get_page(content: str, title: str = "STELLA SYSTEM", show_intro: bool = Fals
 
     return BASE_TEMPLATE.replace("__TITLE__", title).replace("__CONTENT__", content).replace("__INTRO__", intro_html).replace("__HEADER__", header_html).replace("__SIDEBAR__", sidebar_html)
 
-# Шаг 1: Авторизация
 @app.get("/", response_class=HTMLResponse)
 async def index():
     content = """
@@ -277,7 +273,6 @@ async def index():
     """
     return get_page(content, "STELLA SYSTEM - LOGIN", show_intro=False, show_full_nav=False)
 
-# Шаг 2: Ввод ПИН-кода
 @app.post("/verify-pin", response_class=HTMLResponse)
 async def verify_pin_page(username: str = Form(...), password: str = Form(...)):
     content = f"""
@@ -294,7 +289,6 @@ async def verify_pin_page(username: str = Form(...), password: str = Form(...)):
     """
     return get_page(content, "STELLA SYSTEM - PIN", show_intro=False, show_full_nav=False)
 
-# Шаг 3: Ввод данных бота
 @app.post("/check-pin", response_class=HTMLResponse)
 async def check_pin(username: str = Form(...), pin_code: str = Form(...)):
     if pin_code != SECRET_PIN:
@@ -323,7 +317,6 @@ async def add_district(city: str = Form(...), district_name: str = Form(...)):
     CITIES_DB.append({"city": city, "district": district_name, "sales": "$80"})
     return await render_main_dashboard(intro=False)
 
-# Шаг 4: Главный Дашборд (Графики + Районы)
 async def render_main_dashboard(intro: bool = True):
     districts_html = "".join([f"""
         <div style="display: flex; justify-content: space-between; align-items: center; background: var(--input-bg); padding: 8px 12px; border-radius: 8px; margin-bottom: 6px; border: 1px solid var(--input-border);">
@@ -360,7 +353,6 @@ async def render_main_dashboard(intro: bool = True):
             <canvas id="incomeChart" style="max-height: 150px;"></canvas>
         </div>
 
-        <!-- Секция районов -->
         <div style="margin-bottom: 10px;">
             <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 6px; font-weight: 600;">АКТИВНЫЕ РАЙОНЫ ПРОДАЖ:</p>
             <div style="max-height: 110px; overflow-y: auto;">
@@ -372,20 +364,20 @@ async def render_main_dashboard(intro: bool = True):
 
         <script>
             const monthlyData = [
-                {{ month: 'Июль', usd: 120, ltc: 1.85 }},
-                {{ month: 'Авг', usd: 340, ltc: 5.23 }},
-                {{ month: 'Сент', usd: 210, ltc: 3.10 }},
-                {{ month: 'Окт', usd: 580, ltc: 8.92 }},
-                {{ month: 'Нояб', usd: 890, ltc: 13.69 }},
-                {{ month: 'Дек', usd: 1250, ltc: 19.23 }}
+                { month: 'Июль', usd: 120, ltc: 1.85 },
+                { month: 'Авг', usd: 340, ltc: 5.23 },
+                { month: 'Сент', usd: 210, ltc: 3.10 },
+                { month: 'Окт', usd: 580, ltc: 8.92 },
+                { month: 'Нояб', usd: 890, ltc: 13.69 },
+                { month: 'Дек', usd: 1250, ltc: 19.23 }
             ];
 
             const ctx = document.getElementById('incomeChart').getContext('2d');
-            new Chart(ctx, {{
+            new Chart(ctx, {
                 type: 'line',
-                data: {{
+                data: {
                     labels: monthlyData.map(d => d.month),
-                    datasets: [{{
+                    datasets: [{
                         data: monthlyData.map(d => d.usd),
                         borderColor: '#38bdf8',
                         backgroundColor: 'rgba(56, 189, 248, 0.15)',
@@ -395,26 +387,26 @@ async def render_main_dashboard(intro: bool = True):
                         pointRadius: 5,
                         fill: true,
                         tension: 0.35
-                    }}]
-                }},
-                options: {{
+                    }]
+                },
+                options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    plugins: {{ legend: {{ display: false }} }},
-                    scales: {{
-                        x: {{ grid: {{ color: 'rgba(255, 255, 255, 0.05)' }}, ticks: {{ color: '#94a3b8', font: {{ size: 10 }} }} }},
-                        y: {{ grid: {{ color: 'rgba(255, 255, 255, 0.05)' }}, ticks: {{ color: '#94a3b8', font: {{ size: 10 }} }} }}
-                    }},
-                    onClick: (e, elements) => {{
-                        if (elements.length > 0) {{
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { grid: { color: 'rgba(255, 255, 255, 0.05)' }, ticks: { color: '#94a3b8', font: { size: 10 } } },
+                        y: { grid: { color: 'rgba(255, 255, 255, 0.05)' }, ticks: { color: '#94a3b8', font: { size: 10 } } }
+                    },
+                    onClick: (e, elements) => {
+                        if (elements.length > 0) {
                             const item = monthlyData[elements[0].index];
                             document.getElementById('selected-month').innerText = item.month;
                             document.getElementById('stat-usd').innerText = '$' + item.usd.toLocaleString();
                             document.getElementById('stat-ltc').innerText = item.ltc.toFixed(2) + ' LTC';
-                        }}
-                    }}
-                }}
-            }});
+                        }
+                    }
+                }
+            });
         </script>
     """
     return get_page(content, "STELLA SYSTEM - DASHBOARD", show_intro=intro, show_full_nav=True)
