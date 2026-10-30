@@ -1,6 +1,6 @@
 import os
 from fastapi import FastAPI, Form
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 import uvicorn
 
 app = FastAPI()
@@ -49,7 +49,6 @@ BASE_TEMPLATE = """<!DOCTYPE html>
             overflow-x: hidden;
         }
         
-        /* Интро-анимация (Splash Screen) */
         #intro-screen {
             position: fixed;
             top: 0;
@@ -63,32 +62,33 @@ BASE_TEMPLATE = """<!DOCTYPE html>
             justify-content: center;
             align-items: center;
             z-index: 9999;
-            transition: opacity 0.6s ease, visibility 0.6s ease;
+            transition: opacity 0.8s ease, visibility 0.8s ease;
         }
         .intro-content {
             text-align: center;
-            animation: riseUpAndFade 1.4s cubic-bezier(0.77, 0, 0.175, 1) forwards;
+            /* Анимация длится ровно 3 секунды */
+            animation: riseUpAndFade 3s cubic-bezier(0.77, 0, 0.175, 1) forwards;
         }
         .intro-title {
-            font-size: 32px;
+            font-size: 34px;
             font-weight: 700;
-            letter-spacing: 10px;
+            letter-spacing: 12px;
             color: #ffffff;
-            text-shadow: 0 0 20px rgba(56, 189, 248, 0.6);
+            text-shadow: 0 0 25px rgba(56, 189, 248, 0.8);
             margin-bottom: 8px;
         }
         .intro-line {
-            width: 50px;
+            width: 60px;
             height: 2px;
             background: #38bdf8;
             margin: 0 auto;
-            box-shadow: 0 0 10px #38bdf8;
+            box-shadow: 0 0 12px #38bdf8;
         }
 
         @keyframes riseUpAndFade {
             0% { transform: translateY(0); opacity: 1; }
-            70% { transform: translateY(-30px); opacity: 1; }
-            100% { transform: translateY(-60px); opacity: 0; visibility: hidden; }
+            75% { transform: translateY(0); opacity: 1; }
+            100% { transform: translateY(-40px); opacity: 0; visibility: hidden; }
         }
 
         .header-title { text-align: center; margin-bottom: 16px; position: relative; width: 100%; max-width: 360px; }
@@ -191,14 +191,14 @@ BASE_TEMPLATE = """<!DOCTYPE html>
         }
         document.body.setAttribute('data-theme', localStorage.getItem('stella_theme') || 'dark');
 
-        // Убираем заставку через 1.3 секунды после загрузки панели
+        // Убираем заставку ровно через 2.8 секунды
         window.addEventListener('load', () => {
             const intro = document.getElementById('intro-screen');
             if (intro) {
                 setTimeout(() => {
                     intro.style.opacity = '0';
-                    setTimeout(() => intro.remove(), 600);
-                }, 900);
+                    setTimeout(() => intro.remove(), 800);
+                }, 2800);
             }
         });
     </script>
@@ -221,41 +221,54 @@ def get_page(content: str, title: str = "STELLA SYSTEM", show_intro: bool = Fals
 async def index():
     content = """
         <img src="https://images.unsplash.com/photo-1451187580459-43490279c0fa?q=80&w=800&auto=format&fit=crop" alt="Stella Space" class="banner-img">
-        <form method="POST" action="/login">
+        <form method="POST" action="/verify-pin">
             <input type="text" name="username" placeholder="👤 Логин" required>
             <input type="password" name="password" placeholder="🔒 Пароль" required>
-            <button type="submit">Авторизоваться</button>
+            <button type="submit">Далее (ПИН-код)</button>
         </form>
     """
     return get_page(content, "STELLA SYSTEM - LOGIN", show_intro=False)
 
-@app.post("/login", response_class=HTMLResponse)
-async def login(username: str = Form(...), password: str = Form(...)):
+@app.post("/verify-pin", response_class=HTMLResponse)
+async def verify_pin_page(username: str = Form(...), password: str = Form(...)):
+    content = f"""
+        <div style="text-align:center; margin-bottom: 16px;">
+            <p style="color: #38bdf8; font-size: 13px; font-weight: 600;">🔐 Безопасность STELLA</p>
+            <h3 style="margin-top:6px; font-size:16px;">Введите 4-значный ПИН-код</h3>
+        </div>
+        <form method="POST" action="/check-pin">
+            <input type="hidden" name="username" value="{username}">
+            <input type="password" name="pin_code" placeholder="• • • •" pattern="[0-9]{4}" maxlength="4" inputmode="numeric" style="text-align:center; font-size: 20px; letter-spacing: 8px;" required>
+            <button type="submit">Подтвердить</button>
+        </form>
+        <a href="/" class="logout">Отмена</a>
+    """
+    # show_intro=True запускает 3-секундную анимацию перед вводом пин-кода
+    return get_page(content, "STELLA SYSTEM - PIN", show_intro=True)
+
+@app.post("/check-pin", response_class=HTMLResponse)
+async def check_pin(username: str = Form(...), pin_code: str = Form(...)):
+    if pin_code != SECRET_PIN:
+        # Неверный ПИН-код сбрасывает пользователя на самый первый экран
+        return RedirectResponse(url="/", status_code=303)
+    
     content = """
         <div style="text-align:center; margin-bottom: 16px;">
-            <p style="color: #4ade80; font-size: 13px; font-weight: 600;">✔ Панель активна</p>
+            <p style="color: #4ade80; font-size: 13px; font-weight: 600;">✔ Доступ разрешен</p>
             <h3 style="margin-top:6px; font-size:16px;">Управление ботами</h3>
         </div>
         <form method="POST" action="/add-bot">
             <input type="text" name="bot_name" placeholder="Имя бота" required>
             <input type="text" name="bot_token" placeholder="Токен бота от BotFather" required>
-            <input type="password" name="pin_code" placeholder="ПИН-код (4 цифры)" pattern="[0-9]{4}" maxlength="4" inputmode="numeric" required>
             <button type="submit">Запустить бота</button>
         </form>
         <a href="/" class="logout">Выйти</a>
     """
-    # show_intro=True включает анимацию только при переходе на страницу панели!
-    return get_page(content, "STELLA SYSTEM - PANEL", show_intro=True)
+    return get_page(content, "STELLA SYSTEM - PANEL", show_intro=False)
 
 @app.post("/add-bot", response_class=HTMLResponse)
-async def add_bot(bot_name: str = Form(...), bot_token: str = Form(...), pin_code: str = Form(...)):
-    if len(pin_code) != 4 or not pin_code.isdigit():
-        msg = "<h2 style='color:#ef4444; text-align:center;'>❌ Ошибка!</h2><p style='text-align:center; margin:10px 0;'>ПИН-код должен быть из 4 цифр.</p><a href='/' class='logout'>Назад</a>"
-    elif pin_code != SECRET_PIN:
-        msg = "<h2 style='color:#ef4444; text-align:center;'>❌ Неверный ПИН-код!</h2><a href='/' class='logout' style='margin-top:20px;'>Назад</a>"
-    else:
-        msg = f"<h2 style='color:#4ade80; text-align:center;'>🚀 Успех!</h2><p style='text-align:center; margin:10px 0;'>Бот <b>'{bot_name}'</b> запущен в STELLA SYSTEM!</p><a href='/' class='logout' style='margin-top:20px;'>Назад в панель</a>"
-    
+async def add_bot(bot_name: str = Form(...), bot_token: str = Form(...)):
+    msg = f"<h2 style='color:#4ade80; text-align:center;'>🚀 Успех!</h2><p style='text-align:center; margin:10px 0;'>Бот <b>'{bot_name}'</b> запущен в STELLA SYSTEM!</p><a href='/' class='logout' style='margin-top:20px;'>Выход</a>"
     return get_page(msg, "STELLA SYSTEM - STATUS", show_intro=False)
 
 if __name__ == "__main__":
