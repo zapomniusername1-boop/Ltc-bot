@@ -101,7 +101,6 @@ BASE_TEMPLATE = """<!DOCTYPE html>
         .header-title h1 { font-size: 16px; letter-spacing: 3px; font-weight: 600; color: #38bdf8; }
         .header-title p { font-size: 10px; letter-spacing: 2px; color: var(--text-muted); }
         
-        /* Стили для 3 линий (гамбургер-меню) */
         .menu-btn {
             background: var(--card-bg);
             border: 1px solid var(--border-color);
@@ -115,7 +114,6 @@ BASE_TEMPLATE = """<!DOCTYPE html>
             justify-content: center;
         }
 
-        /* Выдвижное меню */
         .sidebar {
             position: fixed;
             top: 0;
@@ -168,6 +166,15 @@ BASE_TEMPLATE = """<!DOCTYPE html>
             max-width: 420px; 
             box-shadow: 0 0 30px rgba(14, 165, 233, 0.15); 
         }
+        .banner-img {
+            width: 100%;
+            height: 160px;
+            object-fit: cover;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            display: block;
+        }
         input { 
             width: 100%; 
             padding: 13px; 
@@ -211,28 +218,9 @@ BASE_TEMPLATE = """<!DOCTYPE html>
 <body data-theme="dark">
     __INTRO__
     
-    <div class="header-container">
-        <button class="menu-btn" onclick="toggleSidebar()">☰</button>
-        <div class="header-title" style="text-align: center;">
-            <h1>STELLA SYSTEM</h1>
-            <p>ACCESS PORTAL</p>
-        </div>
-        <button class="theme-toggle" onclick="toggleTheme()">🌓</button>
-    </div>
-
-    <!-- Выдвижное меню (сайдбар) -->
-    <div id="sidebar" class="sidebar">
-        <div class="sidebar-header">
-            <h3>Меню</h3>
-            <button class="menu-btn" onclick="toggleSidebar()">✕</button>
-        </div>
-        <div class="sidebar-menu">
-            <a href="/">🏠 Главная / Вход</a>
-            <a href="#" onclick="alert('Раздел телеметрии и графиков в разработке')">📊 Графика и Баланс</a>
-            <a href="#" onclick="alert('Все системы работают стабильно')">⚙️ Системные настройки</a>
-            <a href="/" style="color: #fca5a5;">🚪 Выход</a>
-        </div>
-    </div>
+    __HEADER__
+    
+    __SIDEBAR__
     
     <div class="card">
         __CONTENT__
@@ -240,7 +228,8 @@ BASE_TEMPLATE = """<!DOCTYPE html>
 
     <script>
         function toggleSidebar() {
-            document.getElementById('sidebar').classList.toggle('open');
+            const sb = document.getElementById('sidebar');
+            if (sb) sb.classList.toggle('open');
         }
         function toggleTheme() {
             const body = document.body;
@@ -263,7 +252,7 @@ BASE_TEMPLATE = """<!DOCTYPE html>
 </body>
 </html>"""
 
-def get_page(content: str, title: str = "STELLA SYSTEM", show_intro: bool = False) -> str:
+def get_page(content: str, title: str = "STELLA SYSTEM", show_intro: bool = False, show_full_nav: bool = False) -> str:
     intro_html = """
     <div id="intro-screen">
         <div class="intro-content">
@@ -273,19 +262,59 @@ def get_page(content: str, title: str = "STELLA SYSTEM", show_intro: bool = Fals
     </div>
     """ if show_intro else ""
     
-    return BASE_TEMPLATE.replace("__TITLE__", title).replace("__CONTENT__", content).replace("__INTRO__", intro_html)
+    if show_full_nav:
+        header_html = """
+        <div class="header-container">
+            <button class="menu-btn" onclick="toggleSidebar()">☰</button>
+            <div class="header-title" style="text-align: center;">
+                <h1>STELLA SYSTEM</h1>
+                <p>PANEL DASHBOARD</p>
+            </div>
+            <button class="theme-toggle" onclick="toggleTheme()">🌓</button>
+        </div>
+        """
+        sidebar_html = """
+        <div id="sidebar" class="sidebar">
+            <div class="sidebar-header">
+                <h3>Меню</h3>
+                <button class="menu-btn" onclick="toggleSidebar()">✕</button>
+            </div>
+            <div class="sidebar-menu">
+                <a href="#" onclick="alert('Вы уже в панели управления')">🏠 Главная панель</a>
+                <a href="#" onclick="alert('Графика и баланс: Система активна, баланс: 1,450 ST')">📊 Графика и Баланс</a>
+                <a href="#" onclick="alert('Все системные узлы функционируют в штатном режиме')">⚙️ Системные настройки</a>
+                <a href="/" style="color: #fca5a5;">🚪 Выход</a>
+            </div>
+        </div>
+        """
+    else:
+        header_html = """
+        <div class="header-container" style="justify-content: center; position: relative;">
+            <div class="header-title" style="text-align: center;">
+                <h1>STELLA SYSTEM</h1>
+                <p>ACCESS PORTAL</p>
+            </div>
+            <button class="theme-toggle" onclick="toggleTheme()" style="position: absolute; right: 0; top: 0;">🌓</button>
+        </div>
+        """
+        sidebar_html = ""
 
+    return BASE_TEMPLATE.replace("__TITLE__", title).replace("__CONTENT__", content).replace("__INTRO__", intro_html).replace("__HEADER__", header_html).replace("__SIDEBAR__", sidebar_html)
+
+# Шаг 1: Логин и пароль (с картинкой космоса)
 @app.get("/", response_class=HTMLResponse)
 async def index():
     content = """
+        <img src="https://images.unsplash.com/photo-1451187580459-43490279c0fa?q=80&w=800&auto=format&fit=crop" alt="Stella Space" class="banner-img">
         <form method="POST" action="/verify-pin">
             <input type="text" name="username" placeholder="👤 Логин" required>
             <input type="password" name="password" placeholder="🔒 Пароль" required>
             <button type="submit">Войти</button>
         </form>
     """
-    return get_page(content, "STELLA SYSTEM - LOGIN", show_intro=False)
+    return get_page(content, "STELLA SYSTEM - LOGIN", show_intro=False, show_full_nav=False)
 
+# Шаг 2: Ввод ПИН-кода
 @app.post("/verify-pin", response_class=HTMLResponse)
 async def verify_pin_page(username: str = Form(...), password: str = Form(...)):
     content = f"""
@@ -300,8 +329,9 @@ async def verify_pin_page(username: str = Form(...), password: str = Form(...)):
         </form>
         <a href="/" class="logout">Отмена</a>
     """
-    return get_page(content, "STELLA SYSTEM - PIN", show_intro=False)
+    return get_page(content, "STELLA SYSTEM - PIN", show_intro=False, show_full_nav=False)
 
+# Шаг 3: Панель управления ботами (доступна после правильного ПИН-кода)
 @app.post("/check-pin", response_class=HTMLResponse)
 async def check_pin(username: str = Form(...), pin_code: str = Form(...)):
     if pin_code != SECRET_PIN:
@@ -319,19 +349,33 @@ async def check_pin(username: str = Form(...), pin_code: str = Form(...)):
         </form>
         <a href="/" class="logout">Выйти</a>
     """
-    return get_page(content, "STELLA SYSTEM - PANEL", show_intro=False)
+    return get_page(content, "STELLA SYSTEM - PANEL", show_intro=False, show_full_nav=False)
 
+# Шаг 4: Финал — Анимация STELLA + появление 3 полосок (меню) и дашборда с балансом/графикой внутри!
 @app.post("/add-bot", response_class=HTMLResponse)
 async def add_bot(bot_name: str = Form(...), bot_token: str = Form(...)):
     msg = f"""
-        <div style="text-align:center; padding: 20px 0;">
+        <div style="text-align:center; padding: 10px 0;">
             <h2 style='color:#4ade80; margin-bottom: 10px;'>🚀 Успех!</h2>
-            <p style='color:var(--text-color); margin-bottom: 20px;'>Бот <b>'{bot_name}'</b> успешно запущен в STELLA SYSTEM!</p>
-            <a href='/check-pin' class='logout' style='background: #0284c7; color: #fff; border: none; text-decoration: none;'>Назад в панель</a>
+            <p style='color:var(--text-color); margin-bottom: 16px;'>Бот <b>'{bot_name}'</b> запущен в систему.</p>
+            
+            <!-- Блок графики и баланса -->
+            <div style="background: var(--input-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 14px; margin-bottom: 16px; text-align: left;">
+                <p style="font-size: 12px; color: var(--text-muted);">АКТИВНЫЙ БАЛАНС СИСТЕМЫ</p>
+                <h3 style="font-size: 20px; color: #38bdf8; margin: 4px 0 12px 0;">1,450.00 ST</h3>
+                <p style="font-size: 12px; color: var(--text-muted);">ТЕЛЕМЕТРИЯ ЯДРА</p>
+                <div style="width: 100%; height: 6px; background: rgba(56, 189, 248, 0.2); border-radius: 3px; margin-top: 6px; overflow: hidden;">
+                    <div style="width: 75%; height: 100%; background: #38bdf8; box-shadow: 0 0 8px #38bdf8;"></div>
+                </div>
+            </div>
+
+            <a href='/check-pin' class='logout' style='background: #0284c7; color: #fff; border: none; text-decoration: none;'>Вернуться к ботам</a>
         </div>
     """
-    return get_page(msg, "STELLA SYSTEM - STATUS", show_intro=True)
+    # show_intro=True запускает 3-секундную анимацию STELLA, а show_full_nav=True включает 3 полоски (меню) в шапке!
+    return get_page(msg, "STELLA SYSTEM - DASHBOARD", show_intro=True, show_full_nav=True)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
+
