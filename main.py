@@ -50,12 +50,13 @@ def init_db():
             photo_link TEXT
         )
     """)
-    # Таблица для клиентов (тех, кто зашел в бота)
+    # Таблица клиентов с полем для аватарки
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
             username TEXT,
             full_name TEXT,
+            avatar_url TEXT,
             first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
@@ -85,6 +86,30 @@ def set_config(key: str, value: str):
     conn.commit()
     conn.close()
 
+# Функция для получения актуальной ссылки на аватарку пользователя из Telegram
+async def fetch_user_avatar(token: str, user_id: int) -> str:
+    default_avatar = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=200&auto=format&fit=crop"
+    try:
+        async with httpx.AsyncClient() as client:
+            # Запрашиваем список фото профиля пользователя
+            photos_res = await client.get(f"https://api.telegram.org/bot{token}/getUserProfilePhotos", params={"user_id": user_id, "limit": 1})
+            photos_data = photos_res.json()
+            
+            if photos_data.get("ok") and photos_data["result"]["total_count"] > 0:
+                file_id = photos_data["result"]["photos"][0][-1]["file_id"]
+                
+                # Получаем путь к файлу на серверах Telegram
+                file_res = await client.get(f"https://api.telegram.org/bot{token}/getFile", params={"file_id": file_id})
+                file_data = file_res.json()
+                
+                if file_data.get("ok"):
+                    file_path = file_data["result"]["file_path"]
+                    return f"https://api.telegram.org/file/bot{token}/{file_path}"
+    except Exception as e:
+        print(f"Avatar fetch error: {e}")
+        
+    return default_avatar
+
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
     token = get_config("bot_token")
@@ -104,11 +129,17 @@ async def telegram_webhook(request: Request):
             username = user.get("username", "нет")
             full_name = f"{user.get('first_name', '')} {user.get('last_name', '')}".strip()
             
-            # Сохраняем пользователя в клиентскую базу
+            # Получаем аватарку через Telegram API
+            avatar_url = await fetch_user_avatar(token, user_id)
+
+            # Сохраняем или обновляем клиента в базе
             conn = sqlite3.connect("stella.db")
             cursor = conn.cursor()
-            cursor.execute("INSERT OR IGNORE INTO users (user_id, username, full_name) VALUES (?, ?, ?)", 
-                           (user_id, f"@{username}" if username != "нет" else "нет", full_name))
+            cursor.execute("""
+                INSERT INTO users (user_id, username, full_name, avatar_url) 
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(user_id) DO UPDATE SET username=excluded.username, full_name=excluded.full_name, avatar_url=excluded.avatar_url
+            """, (user_id, f"@{username}" if username != "нет" else "нет", full_name, avatar_url))
             conn.commit()
 
             text = msg.get("text", "")
@@ -541,22 +572,25 @@ async def check_pin(pin_code: str = Form(...)):
 async def dashboard_get():
     return await render_main_dashboard(intro=False)
 
-# РАЗДЕЛ КЛИЕНТСКОЙ БАЗЫ
+# РАЗДЕЛ КЛИЕНТСКОЙ БАЗЫ С АВАТАРКАМИ
 @app.get("/clients", response_class=HTMLResponse)
 async def clients_page():
     conn = sqlite3.connect("stella.db")
     cursor = conn.cursor()
-    cursor.execute("SELECT user_id, username, full_name, first_seen FROM users ORDER BY first_seen DESC")
+    cursor.execute("SELECT user_id, username, full_name, avatar_url, first_seen FROM users ORDER BY first_seen DESC")
     users = cursor.fetchall()
     conn.close()
 
     list_html = "".join([f"""
-        <div style="background: var(--input-bg); padding: 10px 12px; border-radius: 8px; margin-bottom: 8px; border: 1px solid var(--input-border);">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                <span style="font-size: 13px; font-weight: 600; color: #38bdf8;">👤 {u[2] or 'Без имени'}</span>
-                <span style="font-size: 11px; color: #4ade80;">{u[1]}</span>
+        <div style="display: flex; align-items: center; gap: 12px; background: var(--input-bg); padding: 10px 12px; border-radius: 10px; margin-bottom: 8px; border: 1px solid var(--input-border);">
+            <img src="{u[3]}" alt="Avatar" style="width: 38px; height: 38px; border-radius: 50%; object-fit: cover; border: 1px solid #38bdf8; flex-shrink: 0;">
+            <div style="flex-grow: 1; overflow: hidden;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                    <span style="font-size: 13px; font-weight: 600; color: #f8fafc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{u[2] or 'Без имени'}</span>
+                    <span style="font-size: 11px; color: #4ade80; font-weight: 500;">{u[1]}</span>
+                </div>
+                <div style="font-size: 10px; color: var(--text-muted);">ID: {u[0]} | Запуск: {u[4]}</div>
             </div>
-            <div style="font-size: 11px; color: var(--text-muted);">ID: {u[0]} | Запуск: {u[3]}</div>
         </div>
     """ for u in users]) if users else '<p style="font-size: 11px; color: var(--text-muted); text-align: center;">Клиентов пока нет (никто еще не запустил бота)</p>'
 
@@ -567,7 +601,7 @@ async def clients_page():
         </div>
 
         <div style="margin-bottom: 14px;">
-            <div style="max-height: 260px; overflow-y: auto;">
+            <div style="max-height: 280px; overflow-y: auto;">
                 {list_html}
             </div>
         </div>
