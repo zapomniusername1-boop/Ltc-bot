@@ -1,6 +1,6 @@
 import os
 import sqlite3
-from fastapi import FastAPI, Form, Request
+from fastapi import FastAPI, Form, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 import uvicorn
 import httpx
@@ -486,7 +486,7 @@ def get_page(content: str, show_full_nav: bool = False) -> str:
                     <a href="/districts">📍 Районы</a>
                     <a href="/categories">📂 Категории</a>
                     <a href="/products">📦 Товары</a>
-                    <a href="/" style="color: #fca5a5;">🚪 Выход</a>
+                    <a href="/logout" style="color: #fca5a5;">🚪 Выход</a>
                 </div>
             </div>
             <div class="admin-profile">
@@ -515,6 +515,9 @@ def get_page(content: str, show_full_nav: bool = False) -> str:
 @app.get("/", response_class=HTMLResponse)
 async def index():
     content = """
+        <div style="text-align: center; margin-bottom: 12px;">
+            <h3 style="font-size: 15px; color: #38bdf8;">Вход в систему</h3>
+        </div>
         <form method="POST" action="/verify-pin">
             <input type="password" name="pin_code" placeholder="• • • • (7777)" maxlength="4" inputmode="numeric" style="text-align:center; font-size: 20px; letter-spacing: 8px;" required>
             <button type="submit">Войти</button>
@@ -526,10 +529,21 @@ async def index():
 async def verify_pin(pin_code: str = Form(...)):
     if pin_code != SECRET_PIN:
         return RedirectResponse(url="/", status_code=303)
-    return await dashboard_get()
+    response = RedirectResponse(url="/dashboard", status_code=303)
+    response.set_cookie(key="auth", value="true")
+    return response
+
+@app.get("/logout", response_class=HTMLResponse)
+async def logout():
+    response = RedirectResponse(url="/", status_code=303)
+    response.delete_cookie(key="auth")
+    return response
 
 @app.get("/dashboard", response_class=HTMLResponse)
-async def dashboard_get():
+async def dashboard_get(request: Request):
+    if request.cookies.get("auth") != "true":
+        return RedirectResponse(url="/", status_code=303)
+
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("SELECT district, items FROM districts")
@@ -567,7 +581,7 @@ async def dashboard_get():
             <canvas id="districtChart" style="max-height: 110px;"></canvas>
         </div>
 
-        <a href='/' class='logout' style='text-decoration: none;'>Выйти</a>
+        <a href='/logout' class='logout' style='text-decoration: none;'>Выйти</a>
 
         <script>
             const ctxIncome = document.getElementById('incomeChart').getContext('2d');
@@ -630,7 +644,10 @@ async def dashboard_get():
     return get_page(dashboard_content, show_full_nav=True)
 
 @app.get("/clients", response_class=HTMLResponse)
-async def clients_page():
+async def clients_page(request: Request):
+    if request.cookies.get("auth") != "true":
+        return RedirectResponse(url="/", status_code=303)
+
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("SELECT user_id, username, full_name, avatar_url, first_seen FROM users ORDER BY first_seen DESC")
@@ -658,7 +675,10 @@ async def clients_page():
     return get_page(content, show_full_nav=True)
 
 @app.get("/bot-settings", response_class=HTMLResponse)
-async def bot_settings_page():
+async def bot_settings_page(request: Request):
+    if request.cookies.get("auth") != "true":
+        return RedirectResponse(url="/", status_code=303)
+        
     bot_name = get_config("bot_name")
     content = f"""
         <div style="text-align:center; margin-bottom: 14px;"><h2>Управление ботом</h2></div>
@@ -674,6 +694,9 @@ async def bot_settings_page():
 
 @app.post("/update-bot", response_class=HTMLResponse)
 async def update_bot(request: Request, bot_name: str = Form(...), bot_token: str = Form(...)):
+    if request.cookies.get("auth") != "true":
+        return RedirectResponse(url="/", status_code=303)
+
     if bot_name and bot_token:
         set_config("bot_name", bot_name)
         set_config("bot_token", bot_token)
@@ -684,7 +707,10 @@ async def update_bot(request: Request, bot_name: str = Form(...), bot_token: str
     return RedirectResponse(url="/bot-settings", status_code=303)
 
 @app.get("/bot-messages", response_class=HTMLResponse)
-async def bot_messages_page():
+async def bot_messages_page(request: Request):
+    if request.cookies.get("auth") != "true":
+        return RedirectResponse(url="/", status_code=303)
+
     welcome_msg = get_config("welcome_msg")
     onetime_msg = get_config("onetime_msg")
     content = f"""
@@ -699,13 +725,19 @@ async def bot_messages_page():
     return get_page(content, show_full_nav=True)
 
 @app.post("/update-bot-messages", response_class=HTMLResponse)
-async def update_bot_messages(welcome_msg: str = Form(...), onetime_msg: str = Form(...)):
+async def update_bot_messages(request: Request, welcome_msg: str = Form(...), onetime_msg: str = Form(...)):
+    if request.cookies.get("auth") != "true":
+        return RedirectResponse(url="/", status_code=303)
+
     set_config("welcome_msg", welcome_msg)
     set_config("onetime_msg", onetime_msg)
     return RedirectResponse(url="/bot-messages", status_code=303)
 
 @app.get("/cities", response_class=HTMLResponse)
-async def cities_page():
+async def cities_page(request: Request):
+    if request.cookies.get("auth") != "true":
+        return RedirectResponse(url="/", status_code=303)
+
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("SELECT name FROM cities")
@@ -724,7 +756,10 @@ async def cities_page():
     return get_page(content, show_full_nav=True)
 
 @app.post("/add-city", response_class=HTMLResponse)
-async def add_city(city_name: str = Form(...)):
+async def add_city(request: Request, city_name: str = Form(...)):
+    if request.cookies.get("auth") != "true":
+        return RedirectResponse(url="/", status_code=303)
+
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("INSERT OR IGNORE INTO cities (name) VALUES (?)", (city_name.strip(),))
@@ -733,7 +768,10 @@ async def add_city(city_name: str = Form(...)):
     return RedirectResponse(url="/cities", status_code=303)
 
 @app.get("/districts", response_class=HTMLResponse)
-async def districts_page():
+async def districts_page(request: Request):
+    if request.cookies.get("auth") != "true":
+        return RedirectResponse(url="/", status_code=303)
+
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("SELECT name FROM cities")
@@ -756,7 +794,10 @@ async def districts_page():
     return get_page(content, show_full_nav=True)
 
 @app.post("/add-district", response_class=HTMLResponse)
-async def add_district(city: str = Form(...), district_name: str = Form(...)):
+async def add_district(request: Request, city: str = Form(...), district_name: str = Form(...)):
+    if request.cookies.get("auth") != "true":
+        return RedirectResponse(url="/", status_code=303)
+
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("INSERT OR IGNORE INTO districts (city, district) VALUES (?, ?)", (city.strip(), district_name.strip()))
@@ -765,7 +806,10 @@ async def add_district(city: str = Form(...), district_name: str = Form(...)):
     return RedirectResponse(url="/districts", status_code=303)
 
 @app.get("/categories", response_class=HTMLResponse)
-async def categories_page():
+async def categories_page(request: Request):
+    if request.cookies.get("auth") != "true":
+        return RedirectResponse(url="/", status_code=303)
+
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("SELECT name FROM categories")
@@ -784,7 +828,10 @@ async def categories_page():
     return get_page(content, show_full_nav=True)
 
 @app.post("/add-category", response_class=HTMLResponse)
-async def add_category(category_name: str = Form(...)):
+async def add_category(request: Request, category_name: str = Form(...)):
+    if request.cookies.get("auth") != "true":
+        return RedirectResponse(url="/", status_code=303)
+
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("INSERT OR IGNORE INTO categories (name) VALUES (?)", (category_name.strip(),))
@@ -793,7 +840,10 @@ async def add_category(category_name: str = Form(...)):
     return RedirectResponse(url="/categories", status_code=303)
 
 @app.get("/products", response_class=HTMLResponse)
-async def products_page():
+async def products_page(request: Request):
+    if request.cookies.get("auth") != "true":
+        return RedirectResponse(url="/", status_code=303)
+
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("SELECT name FROM categories")
@@ -828,7 +878,10 @@ async def products_page():
     return get_page(content, show_full_nav=True)
 
 @app.post("/add-product", response_class=HTMLResponse)
-async def add_product(category: str = Form(...), city: str = Form(...), district: str = Form(...), product_name: str = Form(...), price: float = Form(...), product_link: str = Form("")):
+async def add_product(request: Request, category: str = Form(...), city: str = Form(...), district: str = Form(...), product_name: str = Form(...), price: float = Form(...), product_link: str = Form("")):
+    if request.cookies.get("auth") != "true":
+        return RedirectResponse(url="/", status_code=303)
+
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("INSERT INTO products (category, city, district, name, price, product_link) VALUES (?, ?, ?, ?, ?, ?)", 
