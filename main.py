@@ -443,7 +443,6 @@ async def telegram_webhook(request: Request):
         
     return {"ok": True}
 
-# Оформление веб-панели управления с графиками Chart.js
 BASE_TEMPLATE = """<!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -587,6 +586,9 @@ async def dashboard_get():
     items_data = [d[1] for d in districts_data] if districts_data else [0]
     bot_name = get_config("bot_name")
 
+    labels_json = json.dumps(labels, ensure_ascii=False)
+    items_json = json.dumps(items_data, ensure_ascii=False)
+
     dashboard_content = f"""
         <div style="text-align:center; margin-bottom: 12px;">
             <p style="color: #38bdf8; font-size: 11px; letter-spacing: 2px; font-weight: 600;">АНАЛИТИКА</p>
@@ -639,8 +641,8 @@ async def dashboard_get():
                 }
             });
 
-            const districtsLabels = {json.dumps(labels, ensure_ascii=False)};
-            const districtsItems = {json.dumps(items_data, ensure_ascii=False)};
+            const districtsLabels = {labels_json};
+            const districtsItems = {items_json};
 
             const ctxDistrict = document.getElementById('districtChart').getContext('2d');
             new Chart(ctxDistrict, {
@@ -695,7 +697,7 @@ async def clients_page():
         <div style="max-height: 280px; overflow-y: auto; margin-bottom: 14px;">{list_html}</div>
         <a href='/dashboard' class='logout' style='background: #0284c7; color: #fff; border: none; text-decoration: none;'>← В дашборд</a>
     """
-    return get_page(content, "CLIENT्स", show_full_nav=True)
+    return get_page(content, "CLIENTS", show_full_nav=True)
 
 @app.get("/bot-settings", response_class=HTMLResponse)
 async def bot_settings_page():
