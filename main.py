@@ -44,7 +44,6 @@ def init_db():
     """)
     conn.commit()
     
-    # Дефолтные данные для входа (можешь изменить прямо здесь или через код)
     cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('admin_login', 'admin')")
     cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('admin_password', 'stella777')")
     cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('admin_pin', '7777')")
@@ -169,6 +168,7 @@ async def telegram_webhook(request: Request):
                 cq = data["callback_query"]
                 callback_data = cq["data"]
                 query_id = cq["id"]
+                message_id = cq["message"]["message_id"]
 
                 async with httpx.AsyncClient(timeout=10.0) as client:
                     try:
@@ -189,6 +189,13 @@ async def telegram_webhook(request: Request):
                                  {"text": "💰 Пополнить LTC", "callback_data": "top_up_ltc"}]
                             ]
                         }
+                        # Убираем старую клавиатуру капчи, чтобы колесико крутиться перестало
+                        await client.post(f"{api_url}/editMessageReplyMarkup", json={
+                            "chat_id": chat_id,
+                            "message_id": message_id,
+                            "reply_markup": {"inline_keyboard": []}
+                        })
+                        # Отправляем сообщение об успехе и главное меню
                         await client.post(f"{api_url}/sendMessage", json={
                             "chat_id": chat_id,
                             "text": f"✅ <b>Капча успешно пройдена!</b>\n\n{welcome_msg}",
@@ -414,7 +421,6 @@ async def telegram_webhook(request: Request):
         
     return {"ok": True}
 
-# Космический дизайн Stella со звёздами, анимацией и темой
 BASE_TEMPLATE = """<!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -452,7 +458,6 @@ BASE_TEMPLATE = """<!DOCTYPE html>
             display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 100vh; padding: 20px;
             overflow-x: hidden; position: relative; transition: background 0.3s ease, color 0.3s ease;
         }
-        /* Звёздное небо / Космос */
         body::before {
             content: ""; position: absolute; width: 100%; height: 100%; top: 0; left: 0;
             background-image: radial-gradient(var(--text-color) 1px, transparent 0); background-size: 35px 35px; opacity: var(--stars-opacity); z-index: -1;
@@ -480,7 +485,6 @@ BASE_TEMPLATE = """<!DOCTYPE html>
         button[type="submit"]:active { transform: scale(0.98); }
         .logout { background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); margin-top: 12px; text-align: center; display: block; text-decoration: none; padding: 11px; border-radius: 10px; color: #fca5a5; font-weight: 600; font-size: 14px; }
         
-        /* Анимация загрузки STELLA */
         #loader {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg-color);
             display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 9999;
@@ -501,7 +505,6 @@ BASE_TEMPLATE = """<!DOCTYPE html>
     <div class="card">REPLACE_CONTENT</div>
 
     <script>
-        // Загрузка темы
         if (localStorage.getItem('theme') === 'light') {
             document.body.setAttribute('data-theme', 'light');
         }
@@ -573,7 +576,6 @@ def get_page(content: str, show_full_nav: bool = False) -> str:
     page = page.replace("REPLACE_CONTENT", content)
     return page
 
-# Шаг 1: Ввод логина и пароля
 @app.get("/", response_class=HTMLResponse)
 async def index():
     content = """
@@ -600,7 +602,6 @@ async def verify_login(login: str = Form(...), password: str = Form(...)):
     response.set_cookie(key="pre_auth", value="true")
     return response
 
-# Шаг 2: Ввод ПИН-кода
 @app.get("/pin-page", response_class=HTMLResponse)
 async def pin_page(request: Request):
     if request.cookies.get("pre_auth") != "true":
@@ -611,7 +612,7 @@ async def pin_page(request: Request):
             <h3 style="font-size: 15px; color: #38bdf8; letter-spacing: 1px;">Шаг 2: ПИН-код</h3>
         </div>
         <form method="POST" action="/verify-pin">
-            <input type="password" name="pin_code" placeholder="• • • •" maxlength="6" inputmode="numeric" style="text-align:center; font-size: 20px; letter-spacing: 8px;" required>
+            <input type="password" name="pin_code" placeholder="• • • •" maxlength="4" minlength="4" inputmode="numeric" style="text-align:center; font-size: 20px; letter-spacing: 8px;" required>
             <button type="submit">Подтвердить вход</button>
         </form>
     """
@@ -631,7 +632,6 @@ async def verify_pin(request: Request, pin_code: str = Form(...)):
     response.delete_cookie(key="pre_auth")
     return response
 
-# Страница изменения логина/пароля/пина для будущих серверов
 @app.get("/config-auth", response_class=HTMLResponse)
 async def config_auth_page(request: Request):
     if request.cookies.get("auth") != "true":
@@ -642,7 +642,7 @@ async def config_auth_page(request: Request):
         <form method="POST" action="/update-auth-data">
             <input type="text" name="new_login" value="{get_config('admin_login')}" placeholder="Новый логин" required>
             <input type="password" name="new_password" placeholder="Новый пароль" required>
-            <input type="password" name="new_pin" value="{get_config('admin_pin')}" placeholder="Новый ПИН-код" required>
+            <input type="password" name="new_pin" value="{get_config('admin_pin')}" maxlength="4" placeholder="Новый ПИН (4 цифры)" required>
             <button type="submit">Сохранить новые данные</button>
         </form>
         <a href='/dashboard' class='logout' style='background: #0284c7; color: #fff; border: none; text-decoration: none;'>← В дашборд</a>
@@ -656,7 +656,7 @@ async def update_auth_data(request: Request, new_login: str = Form(...), new_pas
         
     set_config("admin_login", new_login.strip())
     set_config("admin_password", new_password.strip())
-    set_config("admin_pin", new_pin.strip())
+    set_config("admin_pin", new_pin.strip()[:4])
     
     return RedirectResponse(url="/dashboard", status_code=303)
 
@@ -1006,7 +1006,7 @@ async def products_page(request: Request):
     return get_page(content, show_full_nav=True)
 
 @app.post("/add-product", response_class=HTMLResponse)
-async def add_product(request: Request, category: str = Form(...), city: str = Form(...), district: str = Form(...), product_name: str = Form(...), price: float = Form(...), product_link:str = Form("")):
+async def add_product(request: Request, category: str = Form(...), city: str = Form(...), district: str = Form(...), product_name: str = Form(...), price: float = Form(...), product_link: str = Form("")):
     if request.cookies.get("auth") != "true":
         return RedirectResponse(url="/", status_code=303)
 
