@@ -9,7 +9,6 @@ app = FastAPI()
 
 SECRET_PIN = "7777"
 
-# Абсолютный путь к базе данных в папке проекта
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stella.db")
 
 def init_db():
@@ -184,19 +183,22 @@ async def telegram_webhook(request: Request):
 
                 if callback_data.startswith("city_"):
                     selected_city = callback_data.replace("city_", "")
+                    
+                    # Ищем районы, привязанные строго к этому городу
                     cursor.execute("SELECT district FROM districts WHERE city = ?", (selected_city,))
                     districts = [row[0] for row in cursor.fetchall()]
 
                     if not districts:
+                        # Отладочное сообщение: покажет в боте, почему не пошло дальше
                         await client.post(f"{api_url}/sendMessage", json={
                             "chat_id": chat_id,
-                            "text": f"⚠️ В городе <b>{selected_city}</b> пока нет добавленных районов. Добавьте их в панели управления!",
+                            "text": f"⚠️ Ошибка: Для города <b>{selected_city}</b> в базе не найдено ни одного района! Зайдите в админку в «Управление районами» и заново добавьте район, выбрав город '{selected_city}'.",
                             "parse_mode": "HTML"
                         })
                         conn.close()
                         return {"ok": True}
 
-                    keyboard = {"inline_keyboard": [[{"text": f"📍 {d}", "callback_data": f"dist_{d}"}]] for d in districts}
+                    keyboard = {"inline_keyboard": [[{"text": f"📍 {d}", "callback_data": f"dist_{d}"}]] for districts_list in [districts] for d in districts_list}
                     await client.post(f"{api_url}/sendMessage", json={
                         "chat_id": chat_id,
                         "text": f"Город: <b>{selected_city}</b>. Выберите район:",
@@ -212,7 +214,7 @@ async def telegram_webhook(request: Request):
                     if not categories:
                         await client.post(f"{api_url}/sendMessage", json={
                             "chat_id": chat_id,
-                            "text": "⚠️ Категории товаров не настроены."
+                            "text": "⚠️ В панели управления не добавлены категории товаров."
                         })
                         conn.close()
                         return {"ok": True}
@@ -236,7 +238,8 @@ async def telegram_webhook(request: Request):
                     if not products:
                         await client.post(f"{api_url}/sendMessage", json={
                             "chat_id": chat_id,
-                            "text": f"📦 В этой категории пока нет товаров."
+                            "text": f"📦 В этой категории для района <b>{selected_district}</b> пока нет товаров.",
+                            "parse_mode": "HTML"
                         })
                         conn.close()
                         return {"ok": True}
