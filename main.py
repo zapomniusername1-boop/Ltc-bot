@@ -9,7 +9,6 @@ import json
 
 app = FastAPI()
 
-# Данные для входа в твою админку Stella
 ADMIN_LOGIN = "admin"
 ADMIN_PASSWORD = "stella777"
 SECRET_PIN = "7777"
@@ -440,7 +439,6 @@ BASE_TEMPLATE = """<!DOCTYPE html>
             display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 100vh; padding: 20px;
             overflow-x: hidden; position: relative;
         }
-        /* Космический фоновый эффект */
         body::before {
             content: ""; position: absolute; width: 100%; height: 100%; top: 0; left: 0;
             background-image: radial-gradient(white 1px, transparent 0); background-size: 35px 35px; opacity: 0.12; z-index: -1;
@@ -466,7 +464,6 @@ BASE_TEMPLATE = """<!DOCTYPE html>
         button[type="submit"]:active { transform: scale(0.98); }
         .logout { background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); margin-top: 12px; text-align: center; display: block; text-decoration: none; padding: 11px; border-radius: 10px; color: #fca5a5; font-weight: 600; font-size: 14px; }
         
-        /* Анимация перехода STELLA */
         #loader {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #070a13;
             display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 9999;
@@ -545,33 +542,64 @@ def get_page(content: str, show_full_nav: bool = False) -> str:
     page = page.replace("REPLACE_CONTENT", content)
     return page
 
+# Шаг 1: Ввод логина и пароля
 @app.get("/", response_class=HTMLResponse)
 async def index():
     content = """
         <div style="text-align: center; margin-bottom: 16px;">
-            <h3 style="font-size: 15px; color: #38bdf8; letter-spacing: 1px;">Авторизация в системе</h3>
+            <h3 style="font-size: 15px; color: #38bdf8; letter-spacing: 1px;">Шаг 1: Авторизация</h3>
         </div>
-        <form method="POST" action="/verify-auth">
+        <form method="POST" action="/verify-login">
             <input type="text" name="login" placeholder="Логин (admin)" required>
-            <input type="password" name="password" placeholder="Пароль" required>
-            <input type="password" name="pin_code" placeholder="ПИН-код (7777)" maxlength="4" inputmode="numeric" style="text-align:center; font-size: 18px; letter-spacing: 6px;" required>
-            <button type="submit">Войти в систему</button>
+            <input type="password" name="password" placeholder="Пароль (stella777)" required>
+            <button type="submit">Далее →</button>
         </form>
     """
     return get_page(content, show_full_nav=False)
 
-@app.post("/verify-auth", response_class=HTMLResponse)
-async def verify_auth(login: str = Form(...), password: str = Form(...), pin_code: str = Form(...)):
-    if login != ADMIN_LOGIN or password != ADMIN_PASSWORD or pin_code != SECRET_PIN:
+@app.post("/verify-login", response_class=HTMLResponse)
+async def verify_login(login: str = Form(...), password: str = Form(...)):
+    if login != ADMIN_LOGIN or password != ADMIN_PASSWORD:
         return RedirectResponse(url="/", status_code=303)
+    response = RedirectResponse(url="/pin-page", status_code=303)
+    response.set_cookie(key="pre_auth", value="true")
+    return response
+
+# Шаг 2: Ввод ПИН-кода
+@app.get("/pin-page", response_class=HTMLResponse)
+async def pin_page(request: Request):
+    if request.cookies.get("pre_auth") != "true":
+        return RedirectResponse(url="/", status_code=303)
+    
+    content = """
+        <div style="text-align: center; margin-bottom: 16px;">
+            <h3 style="font-size: 15px; color: #38bdf8; letter-spacing: 1px;">Шаг 2: ПИН-код</h3>
+        </div>
+        <form method="POST" action="/verify-pin">
+            <input type="password" name="pin_code" placeholder="• • • • (7777)" maxlength="4" inputmode="numeric" style="text-align:center; font-size: 20px; letter-spacing: 8px;" required>
+            <button type="submit">Подтвердить вход</button>
+        </form>
+    """
+    return get_page(content, show_full_nav=False)
+
+@app.post("/verify-pin", response_class=HTMLResponse)
+async def verify_pin(request: Request, pin_code: str = Form(...)):
+    if request.cookies.get("pre_auth") != "true":
+        return RedirectResponse(url="/", status_code=303)
+        
+    if pin_code != SECRET_PIN:
+        return RedirectResponse(url="/pin-page", status_code=303)
+        
     response = RedirectResponse(url="/dashboard", status_code=303)
     response.set_cookie(key="auth", value="true")
+    response.delete_cookie(key="pre_auth")
     return response
 
 @app.get("/logout", response_class=HTMLResponse)
 async def logout():
     response = RedirectResponse(url="/", status_code=303)
     response.delete_cookie(key="auth")
+    response.delete_cookie(key="pre_auth")
     return response
 
 @app.get("/dashboard", response_class=HTMLResponse)
