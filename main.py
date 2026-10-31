@@ -9,7 +9,7 @@ app = FastAPI()
 
 SECRET_PIN = "7777"
 
-# Инициализация базы данных SQLite (безопасная для сохранения данных)
+# Инициализация базы данных SQLite с защитой от стирания данных при перезапуске
 def init_db():
     conn = sqlite3.connect("stella.db")
     cursor = conn.cursor()
@@ -61,7 +61,7 @@ def init_db():
     """)
     conn.commit()
     
-    # Значения по умолчанию устанавливаются только если их еще нет
+    # Дефолтные настройки записываются только если их еще нет
     cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('bot_name', 'Не привязан')")
     cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('bot_token', '')")
     cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('welcome_msg', 'Добро пожаловать в STELLA SYSTEM! Выберите город для покупки:')")
@@ -92,7 +92,7 @@ def set_config(key: str, value: str):
     conn.commit()
     conn.close()
 
-# Функция для получения аватарки пользователя
+# Функция получения аватарки пользователя через Telegram API
 async def fetch_user_avatar(token: str, user_id: int) -> str:
     default_avatar = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=200&auto=format&fit=crop"
     try:
@@ -190,7 +190,7 @@ async def telegram_webhook(request: Request):
                     if not districts:
                         await client.post(f"{api_url}/sendMessage", json={
                             "chat_id": chat_id,
-                            "text": f"В городе <b>{selected_city}</b> пока нет районов.",
+                            "text": f"⚠️ В городе <b>{selected_city}</b> пока нет добавленных районов. Добавьте их в панели управления!",
                             "parse_mode": "HTML"
                         })
                         conn.close()
@@ -212,7 +212,7 @@ async def telegram_webhook(request: Request):
                     if not categories:
                         await client.post(f"{api_url}/sendMessage", json={
                             "chat_id": chat_id,
-                            "text": "Категории не настроены."
+                            "text": "⚠️ Категории товаров не настроены."
                         })
                         conn.close()
                         return {"ok": True}
@@ -236,7 +236,7 @@ async def telegram_webhook(request: Request):
                     if not products:
                         await client.post(f"{api_url}/sendMessage", json={
                             "chat_id": chat_id,
-                            "text": f"В этой категории пока нет товаров."
+                            "text": f"📦 В этой категории пока нет товаров."
                         })
                         conn.close()
                         return {"ok": True}
