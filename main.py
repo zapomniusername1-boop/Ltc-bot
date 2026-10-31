@@ -9,9 +9,11 @@ app = FastAPI()
 
 SECRET_PIN = "7777"
 
-# Инициализация базы данных SQLite с защитой от стирания данных при перезапуске
+# Абсолютный путь к базе данных в папке проекта
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stella.db")
+
 def init_db():
-    conn = sqlite3.connect("stella.db")
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS config (
@@ -61,7 +63,6 @@ def init_db():
     """)
     conn.commit()
     
-    # Дефолтные настройки записываются только если их еще нет
     cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('bot_name', 'Не привязан')")
     cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('bot_token', '')")
     cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('welcome_msg', 'Добро пожаловать в STELLA SYSTEM! Выберите город для покупки:')")
@@ -78,7 +79,7 @@ def init_db():
 init_db()
 
 def get_config(key: str) -> str:
-    conn = sqlite3.connect("stella.db")
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("SELECT value FROM config WHERE key = ?", (key,))
     row = cursor.fetchone()
@@ -86,13 +87,12 @@ def get_config(key: str) -> str:
     return row[0] if row else ""
 
 def set_config(key: str, value: str):
-    conn = sqlite3.connect("stella.db")
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", (key, value))
     conn.commit()
     conn.close()
 
-# Функция получения аватарки пользователя через Telegram API
 async def fetch_user_avatar(token: str, user_id: int) -> str:
     default_avatar = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=200&auto=format&fit=crop"
     try:
@@ -134,7 +134,7 @@ async def telegram_webhook(request: Request):
             
             avatar_url = await fetch_user_avatar(token, user_id)
 
-            conn = sqlite3.connect("stella.db")
+            conn = sqlite3.connect(DB_PATH)
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT INTO users (user_id, username, full_name, avatar_url) 
@@ -179,7 +179,7 @@ async def telegram_webhook(request: Request):
             async with httpx.AsyncClient() as client:
                 await client.post(f"{api_url}/answerCallbackQuery", json={"callback_query_id": query_id})
 
-                conn = sqlite3.connect("stella.db")
+                conn = sqlite3.connect(DB_PATH)
                 cursor = conn.cursor()
 
                 if callback_data.startswith("city_"):
@@ -603,7 +603,7 @@ async def dashboard_get():
 
 @app.get("/clients", response_class=HTMLResponse)
 async def clients_page():
-    conn = sqlite3.connect("stella.db")
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("SELECT user_id, username, full_name, avatar_url, first_seen FROM users ORDER BY first_seen DESC")
     users = cursor.fetchall()
@@ -726,7 +726,7 @@ async def update_bot_messages(welcome_msg: str = Form(...), onetime_msg: str = F
 
 @app.get("/cities", response_class=HTMLResponse)
 async def cities_page(status: str = None):
-    conn = sqlite3.connect("stella.db")
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("SELECT name FROM cities")
     cities = [row[0] for row in cursor.fetchall()]
@@ -771,7 +771,7 @@ async def cities_page(status: str = None):
 @app.post("/add-city", response_class=HTMLResponse)
 async def add_city(city_name: str = Form(...)):
     if city_name:
-        conn = sqlite3.connect("stella.db")
+        conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         try:
             cursor.execute("INSERT OR IGNORE INTO cities (name) VALUES (?)", (city_name,))
@@ -784,7 +784,7 @@ async def add_city(city_name: str = Form(...)):
 
 @app.get("/districts", response_class=HTMLResponse)
 async def districts_page(status: str = None):
-    conn = sqlite3.connect("stella.db")
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("SELECT name FROM cities")
     cities = [row[0] for row in cursor.fetchall()]
@@ -841,7 +841,7 @@ async def districts_page(status: str = None):
 @app.post("/add-district", response_class=HTMLResponse)
 async def add_district(city: str = Form(...), district_name: str = Form(...)):
     if city and district_name:
-        conn = sqlite3.connect("stella.db")
+        conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         try:
             cursor.execute("INSERT OR IGNORE INTO districts (city, district) VALUES (?, ?)", (city, district_name))
@@ -854,7 +854,7 @@ async def add_district(city: str = Form(...), district_name: str = Form(...)):
 
 @app.get("/categories", response_class=HTMLResponse)
 async def categories_page(status: str = None):
-    conn = sqlite3.connect("stella.db")
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("SELECT name FROM categories")
     categories = [row[0] for row in cursor.fetchall()]
@@ -899,7 +899,7 @@ async def categories_page(status: str = None):
 @app.post("/add-category", response_class=HTMLResponse)
 async def add_category(category_name: str = Form(...)):
     if category_name:
-        conn = sqlite3.connect("stella.db")
+        conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         try:
             cursor.execute("INSERT OR IGNORE INTO categories (name) VALUES (?)", (category_name,))
@@ -912,7 +912,7 @@ async def add_category(category_name: str = Form(...)):
 
 @app.get("/products", response_class=HTMLResponse)
 async def products_page(status: str = None):
-    conn = sqlite3.connect("stella.db")
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("SELECT name FROM categories")
     categories = [row[0] for row in cursor.fetchall()]
@@ -991,7 +991,7 @@ async def products_page(status: str = None):
 @app.post("/add-product", response_class=HTMLResponse)
 async def add_product(category: str = Form(...), city: str = Form(...), district: str = Form(...), product_name: str = Form(...), price: float = Form(...), product_link: str = Form(""), photo_link: str = Form("")):
     if category and city and district and product_name and (product_link or photo_link):
-        conn = sqlite3.connect("stella.db")
+        conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         cursor.execute("INSERT INTO products (category, city, district, name, price, product_link, photo_link) VALUES (?, ?, ?, ?, ?, ?, ?)", 
                        (category, city, district, product_name, price, product_link, photo_link))
@@ -1001,7 +1001,7 @@ async def add_product(category: str = Form(...), city: str = Form(...), district
     return RedirectResponse(url="/products?status=error", status_code=303)
 
 async def render_main_dashboard(intro: bool = True):
-    conn = sqlite3.connect("stella.db")
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("SELECT district, items FROM districts")
     districts_data = cursor.fetchall()
