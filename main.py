@@ -543,7 +543,7 @@ async def dashboard_get():
     labels_json = json.dumps(labels, ensure_ascii=False)
     items_json = json.dumps(items_data, ensure_ascii=False)
 
-    dashboard_content = f"""
+    dashboard_content = """
         <div style="text-align:center; margin-bottom: 12px;">
             <p style="color: #38bdf8; font-size: 11px; letter-spacing: 2px; font-weight: 600;">АНАЛИТИКА</p>
             <h2 style="font-size: 18px; margin-top: 2px;">Дашборд и Графики</h2>
@@ -551,7 +551,7 @@ async def dashboard_get():
 
         <div style="background: var(--input-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 10px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
             <span style="font-size: 11px; color: var(--text-muted);">Активный бот:</span>
-            <span style="font-size: 12px; color: #4ade80; font-weight: 600;">🤖 {bot_name}</span>
+            <span style="font-size: 12px; color: #4ade80; font-weight: 600;">🤖 BOT_NAME_VAL</span>
         </div>
 
         <div style="background: var(--input-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 10px; margin-bottom: 12px;">
@@ -595,8 +595,8 @@ async def dashboard_get():
                 }
             });
 
-            const districtsLabels = {labels_json};
-            const districtsItems = {items_json};
+            const districtsLabels = LABELS_JSON_PLACEHOLDER;
+            const districtsItems = ITEMS_JSON_PLACEHOLDER;
 
             const ctxDistrict = document.getElementById('districtChart').getContext('2d');
             new Chart(ctxDistrict, {
@@ -623,6 +623,10 @@ async def dashboard_get():
             });
         </script>
     """
+    dashboard_content = dashboard_content.replace("BOT_NAME_VAL", bot_name)
+    dashboard_content = dashboard_content.replace("LABELS_JSON_PLACEHOLDER", labels_json)
+    dashboard_content = dashboard_content.replace("ITEMS_JSON_PLACEHOLDER", items_json)
+    
     return get_page(dashboard_content, show_full_nav=True)
 
 @app.get("/clients", response_class=HTMLResponse)
