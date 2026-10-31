@@ -496,7 +496,7 @@ BASE_TEMPLATE = """<!DOCTYPE html>
         button[type="submit"]:active { transform: scale(0.98); }
         .logout { background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); margin-top: 12px; text-align: center; display: block; text-decoration: none; padding: 11px; border-radius: 10px; color: #fca5a5; font-weight: 600; font-size: 14px; }
         
-        /* Стили для шестерёнки и выпадающего меню категорий */
+        /* Стили для шестерёнки и выпадающего меню */
         .gear-container { position: absolute; top: 20px; right: 20px; }
         .gear-btn { background: var(--input-bg); border: 1px solid var(--border-color); color: #38bdf8; width: 36px; height: 36px; border-radius: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 16px; transition: transform 0.3s; }
         .gear-btn:hover { transform: rotate(90deg); }
@@ -532,7 +532,7 @@ BASE_TEMPLATE = """<!DOCTYPE html>
         <h2 style="color: #38bdf8; font-size: 14px; letter-spacing: 4px;">STELLA SYSTEM</h2>
     </div>
 
-    <!-- Голографический лоадер удаления -->
+    <!-- Голографический лоадер действия -->
     <div id="holoOverlay">
         <div class="holo-spinner"></div>
         <p style="color: #38bdf8; margin-top: 15px; font-size: 13px; letter-spacing: 2px;">ДЕЙСТВИЕ ВЫПОЛНЕНО</p>
@@ -559,8 +559,8 @@ BASE_TEMPLATE = """<!DOCTYPE html>
             setTimeout(() => loader.style.display = 'none', 500);
         });
         function toggleSidebar() { document.getElementById('sidebar').classList.toggle('open'); }
-        function toggleDropdown() {
-            const menu = document.getElementById('gearDropdown');
+        function toggleDropdown(id = 'gearDropdown') {
+            const menu = document.getElementById(id);
             menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
         }
         window.onclick = function(event) {
@@ -571,7 +571,7 @@ BASE_TEMPLATE = """<!DOCTYPE html>
                 }
             }
         }
-        function openModal(id) { document.getElementById(id).style.display = 'flex'; document.getElementById('gearDropdown').style.display = 'none'; }
+        function openModal(id) { document.getElementById(id).style.display = 'flex'; const drop = document.getElementById('gearDropdown'); if(drop) drop.style.display = 'none'; }
         function closeModal(id) { document.getElementById(id).style.display = 'none'; }
         
         function showHolo(form) {
@@ -919,6 +919,7 @@ async def update_bot_messages(request: Request, welcome_msg: str = Form(...), on
     set_config("onetime_msg", onetime_msg)
     return RedirectResponse(url="/bot-messages", status_code=303)
 
+# ==================== УПРАВЛЕНИЕ ГОРОДАМИ (С ШЕСТЕРЁНКОЙ) ====================
 @app.get("/cities", response_class=HTMLResponse)
 async def cities_page(request: Request):
     if request.cookies.get("auth") != "true":
@@ -930,21 +931,46 @@ async def cities_page(request: Request):
     cities = [row[0] for row in cursor.fetchall()]
     conn.close()
     
-    list_html = "".join([f'''
-        <div style="display: flex; justify-content: space-between; align-items: center; background: var(--input-bg); padding: 8px 12px; border-radius: 8px; margin-bottom: 6px; border: 1px solid var(--input-border);">
-            <span>🏙️ {c}</span>
-            <a href="/delete-city?name={c}" style="color: #fca5a5; font-size: 12px; text-decoration: none; background: rgba(239,68,68,0.1); padding: 4px 8px; border-radius: 6px;">🗑️ Удалить</a>
-        </div>
-    ''' for c in cities]) or '<p style="font-size: 11px; color: var(--text-muted); text-align: center;">Нет городов</p>'
+    list_html = "".join([f'<div style="background: var(--input-bg); padding: 10px 14px; border-radius: 8px; margin-bottom: 6px; border: 1px solid var(--input-border); font-size: 14px;">🏙️ {c}</div>' for c in cities]) or '<p style="font-size: 12px; color: var(--text-muted); text-align: center; padding: 20px;">Список городов пуст</p>'
+    delete_options = "".join([f'<option value="{c}">{c}</option>' for c in cities])
 
     content = f"""
-        <h2>Города</h2>
-        <form method="POST" action="/add-city">
-            <input type="text" name="city_name" placeholder="Название города" required>
-            <button type="submit">Добавить город</button>
-        </form>
-        <div style="margin-top: 15px; max-height: 250px; overflow-y: auto;">{list_html}</div>
-        <a href='/dashboard' class='logout' style='background: #0284c7; color: #fff; border: none; text-decoration: none;'>Назад в дашборд</a>
+        <div class="gear-container">
+            <button class="gear-btn" onclick="toggleDropdown('cityDropdown')" title="Настройки">⚙️</button>
+            <div id="cityDropdown" class="dropdown-menu">
+                <button onclick="openModal('addCityModal')">➕ Добавить город</button>
+                <button class="delete-opt" onclick="openModal('deleteCityModal')">🗑️ Удалить город</button>
+            </div>
+        </div>
+
+        <h2 style="margin-bottom: 15px;">Города</h2>
+        <div style="max-height: 300px; overflow-y: auto; margin-bottom: 15px;">{list_html}</div>
+        <a href='/dashboard' class='logout' style='background: #0284c7; color: #fff; border: none; text-decoration: none;'>← В дашборд</a>
+
+        <div id="addCityModal" class="modal">
+            <div class="modal-content">
+                <h3 style="color: #38bdf8; font-size: 15px; margin-bottom: 12px;">Добавить город</h3>
+                <form method="POST" action="/add-city" onsubmit="return showHolo(this)">
+                    <input type="text" name="city_name" placeholder="Название города" required>
+                    <button type="submit">Сохранить</button>
+                </form>
+                <button type="button" onclick="closeModal('addCityModal')" style="width: 100%; margin-top: 8px; background: transparent; border: 1px solid var(--border-color); color: var(--text-muted); padding: 10px; border-radius: 10px; cursor: pointer;">Отмена</button>
+            </div>
+        </div>
+
+        <div id="deleteCityModal" class="modal">
+            <div class="modal-content">
+                <h3 style="color: #ef4444; font-size: 15px; margin-bottom: 12px;">Удалить город</h3>
+                <form method="POST" action="/delete-city" onsubmit="return showHolo(this)">
+                    <select name="city_name" required style="border-color: rgba(239, 68, 68, 0.4);">
+                        <option value="" disabled selected>Выберите город</option>
+                        {delete_options}
+                    </select>
+                    <button type="submit" style="background: linear-gradient(135deg, #ef4444, #dc2626); box-shadow: 0 4px 15px rgba(239,68,68,0.4);">Удалить</button>
+                </form>
+                <button type="button" onclick="closeModal('deleteCityModal')" style="width: 100%; margin-top: 8px; background: transparent; border: 1px solid var(--border-color); color: var(--text-muted); padding: 10px; border-radius: 10px; cursor: pointer;">Отмена</button>
+            </div>
+        </div>
     """
     return get_page(content, show_full_nav=True)
 
@@ -960,19 +986,20 @@ async def add_city(request: Request, city_name: str = Form(...)):
     conn.close()
     return RedirectResponse(url="/cities", status_code=303)
 
-@app.get("/delete-city", response_class=HTMLResponse)
-async def delete_city(request: Request, name: str):
+@app.post("/delete-city", response_class=HTMLResponse)
+async def delete_city(request: Request, city_name: str = Form(...)):
     if request.cookies.get("auth") != "true":
         return RedirectResponse(url="/", status_code=303)
 
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("DELETE FROM cities WHERE name = ?", (name,))
-    cursor.execute("DELETE FROM districts WHERE city = ?", (name,))
+    cursor.execute("DELETE FROM cities WHERE name = ?", (city_name,))
+    cursor.execute("DELETE FROM districts WHERE city = ?", (city_name,))
     conn.commit()
     conn.close()
     return RedirectResponse(url="/cities", status_code=303)
 
+# ==================== УПРАВЛЕНИЕ РАЙОНАМИ (С ШЕСТЕРЁНКОЙ) ====================
 @app.get("/districts", response_class=HTMLResponse)
 async def districts_page(request: Request):
     if request.cookies.get("auth") != "true":
@@ -987,22 +1014,51 @@ async def districts_page(request: Request):
     conn.close()
     
     city_options = "".join([f'<option value="{c}">{c}</option>' for c in cities])
-    list_html = "".join([f'''
-        <div style="display: flex; justify-content: space-between; align-items: center; background: var(--input-bg); padding: 8px 12px; border-radius: 8px; margin-bottom: 6px; border: 1px solid var(--input-border);">
-            <span>📍 {d[1]} ({d[0]})</span>
-            <a href="/delete-district?district={d[1]}" style="color: #fca5a5; font-size: 12px; text-decoration: none; background: rgba(239,68,68,0.1); padding: 4px 8px; border-radius: 6px;">🗑️ Удалить</a>
-        </div>
-    ''' for d in districts]) or '<p style="font-size: 11px; color: var(--text-muted); text-align: center;">Нет районов</p>'
+    delete_options = "".join([f'<option value="{d[1]}">{d[1]} ({d[0]})</option>' for d in districts])
+    
+    list_html = "".join([f'<div style="background: var(--input-bg); padding: 10px 14px; border-radius: 8px; margin-bottom: 6px; border: 1px solid var(--input-border); font-size: 14px;">📍 {d[1]} <span style="color:var(--text-muted); font-size:12px;">({d[0]})</span></div>' for d in districts]) or '<p style="font-size: 12px; color: var(--text-muted); text-align: center; padding: 20px;">Список районов пуст</p>'
 
     content = f"""
-        <h2>Районы</h2>
-        <form method="POST" action="/add-district">
-            <select name="city" required><option value="" disabled selected>Город</option>{city_options}</select>
-            <input type="text" name="district_name" placeholder="Название района" required>
-            <button type="submit">Добавить район</button>
-        </form>
-        <div style="margin-top: 15px; max-height: 250px; overflow-y: auto;">{list_html}</div>
-        <a href='/dashboard' class='logout' style='background: #0284c7; color: #fff; border: none; text-decoration: none;'>Назад в дашборд</a>
+        <div class="gear-container">
+            <button class="gear-btn" onclick="toggleDropdown('districtDropdown')" title="Настройки">⚙️</button>
+            <div id="districtDropdown" class="dropdown-menu">
+                <button onclick="openModal('addDistrictModal')">➕ Добавить район</button>
+                <button class="delete-opt" onclick="openModal('deleteDistrictModal')">🗑️ Удалить район</button>
+            </div>
+        </div>
+
+        <h2 style="margin-bottom: 15px;">Районы</h2>
+        <div style="max-height: 300px; overflow-y: auto; margin-bottom: 15px;">{list_html}</div>
+        <a href='/dashboard' class='logout' style='background: #0284c7; color: #fff; border: none; text-decoration: none;'>← В дашборд</a>
+
+        <div id="addDistrictModal" class="modal">
+            <div class="modal-content">
+                <h3 style="color: #38bdf8; font-size: 15px; margin-bottom: 12px;">Добавить район</h3>
+                <form method="POST" action="/add-district" onsubmit="return showHolo(this)">
+                    <select name="city" required>
+                        <option value="" disabled selected>Выберите город</option>
+                        {city_options}
+                    </select>
+                    <input type="text" name="district_name" placeholder="Название района" required>
+                    <button type="submit">Сохранить</button>
+                </form>
+                <button type="button" onclick="closeModal('addDistrictModal')" style="width: 100%; margin-top: 8px; background: transparent; border: 1px solid var(--border-color); color: var(--text-muted); padding: 10px; border-radius: 10px; cursor: pointer;">Отмена</button>
+            </div>
+        </div>
+
+        <div id="deleteDistrictModal" class="modal">
+            <div class="modal-content">
+                <h3 style="color: #ef4444; font-size: 15px; margin-bottom: 12px;">Удалить район</h3>
+                <form method="POST" action="/delete-district" onsubmit="return showHolo(this)">
+                    <select name="district_name" required style="border-color: rgba(239, 68, 68, 0.4);">
+                        <option value="" disabled selected>Выберите район</option>
+                        {delete_options}
+                    </select>
+                    <button type="submit" style="background: linear-gradient(135deg, #ef4444, #dc2626); box-shadow: 0 4px 15px rgba(239,68,68,0.4);">Удалить</button>
+                </form>
+                <button type="button" onclick="closeModal('deleteDistrictModal')" style="width: 100%; margin-top: 8px; background: transparent; border: 1px solid var(--border-color); color: var(--text-muted); padding: 10px; border-radius: 10px; cursor: pointer;">Отмена</button>
+            </div>
+        </div>
     """
     return get_page(content, show_full_nav=True)
 
@@ -1018,19 +1074,19 @@ async def add_district(request: Request, city: str = Form(...), district_name: s
     conn.close()
     return RedirectResponse(url="/districts", status_code=303)
 
-@app.get("/delete-district", response_class=HTMLResponse)
-async def delete_district(request: Request, district: str):
+@app.post("/delete-district", response_class=HTMLResponse)
+async def delete_district(request: Request, district_name: str = Form(...)):
     if request.cookies.get("auth") != "true":
         return RedirectResponse(url="/", status_code=303)
 
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("DELETE FROM districts WHERE district = ?", (district,))
+    cursor.execute("DELETE FROM districts WHERE district = ?", (district_name,))
     conn.commit()
     conn.close()
     return RedirectResponse(url="/districts", status_code=303)
 
-# ==================== УПРАВЛЕНИЕ КАТЕГОРИЯМИ С ШЕСТЕРЁНКОЙ И АНИМАЦИЕЙ ====================
+# ==================== УПРАВЛЕНИЕ КАТЕГОРИЯМИ ====================
 @app.get("/categories", response_class=HTMLResponse)
 async def categories_page(request: Request):
     if request.cookies.get("auth") != "true":
@@ -1043,14 +1099,12 @@ async def categories_page(request: Request):
     conn.close()
 
     list_html = "".join([f'<div style="background: var(--input-bg); padding: 10px 14px; border-radius: 8px; margin-bottom: 6px; border: 1px solid var(--input-border); font-size: 14px;">📂 {c}</div>' for c in categories]) or '<p style="font-size: 12px; color: var(--text-muted); text-align: center; padding: 20px;">Список категорий пуст</p>'
-
     delete_options = "".join([f'<option value="{c}">{c}</option>' for c in categories])
 
     content = f"""
-        <!-- Кнопка-шестерёнка в правом верхнем углу карточки -->
         <div class="gear-container">
-            <button class="gear-btn" onclick="toggleDropdown()" title="Настройки">⚙️</button>
-            <div id="gearDropdown" class="dropdown-menu">
+            <button class="gear-btn" onclick="toggleDropdown('categoryDropdown')" title="Настройки">⚙️</button>
+            <div id="categoryDropdown" class="dropdown-menu">
                 <button onclick="openModal('addModal')">➕ Добавить категорию</button>
                 <button class="delete-opt" onclick="openModal('deleteModal')">🗑️ Удалить категорию</button>
             </div>
@@ -1060,7 +1114,6 @@ async def categories_page(request: Request):
         <div style="max-height: 300px; overflow-y: auto; margin-bottom: 15px;">{list_html}</div>
         <a href='/dashboard' class='logout' style='background: #0284c7; color: #fff; border: none; text-decoration: none;'>← В дашборд</a>
 
-        <!-- Модалка: Добавление категории -->
         <div id="addModal" class="modal">
             <div class="modal-content">
                 <h3 style="color: #38bdf8; font-size: 15px; margin-bottom: 12px;">Добавить категорию</h3>
@@ -1072,7 +1125,6 @@ async def categories_page(request: Request):
             </div>
         </div>
 
-        <!-- Модалка: Удаление категории -->
         <div id="deleteModal" class="modal">
             <div class="modal-content">
                 <h3 style="color: #ef4444; font-size: 15px; margin-bottom: 12px;">Удалить категорию</h3>
