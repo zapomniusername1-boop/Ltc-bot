@@ -9,10 +9,6 @@ import json
 
 app = FastAPI()
 
-ADMIN_LOGIN = "admin"
-ADMIN_PASSWORD = "stella777"
-SECRET_PIN = "7777"
-
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stella.db")
 
 def init_db():
@@ -48,6 +44,11 @@ def init_db():
     """)
     conn.commit()
     
+    # Дефолтные данные для входа (можешь изменить прямо здесь или через код)
+    cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('admin_login', 'admin')")
+    cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('admin_password', 'stella777')")
+    cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('admin_pin', '7777')")
+
     cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('bot_name', 'Не привязан')")
     cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('bot_token', '')")
     cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('welcome_msg', 'Добро пожаловать в STELLA SYSTEM! Выберите нужный раздел:')")
@@ -413,7 +414,7 @@ async def telegram_webhook(request: Request):
         
     return {"ok": True}
 
-# Космический дизайн Stella с анимацией перехода
+# Космический дизайн Stella со звёздами, анимацией и темой
 BASE_TEMPLATE = """<!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -431,22 +432,36 @@ BASE_TEMPLATE = """<!DOCTYPE html>
             --text-muted: #94a3b8;
             --input-bg: rgba(15, 23, 42, 0.8);
             --input-border: rgba(100, 116, 139, 0.3);
+            --stars-opacity: 0.12;
+        }
+        [data-theme="light"] {
+            --bg-color: #f1f5f9;
+            --bg-gradient: radial-gradient(circle at 50% 30%, #e2e8f0 0%, #cbd5e1 100%);
+            --card-bg: rgba(255, 255, 255, 0.9);
+            --border-color: rgba(2, 132, 199, 0.3);
+            --text-color: #0f172a;
+            --text-muted: #64748b;
+            --input-bg: rgba(241, 245, 249, 0.9);
+            --input-border: rgba(203, 213, 225, 0.8);
+            --stars-opacity: 0.03;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { 
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
             background: var(--bg-color); background-image: var(--bg-gradient); color: var(--text-color); 
             display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 100vh; padding: 20px;
-            overflow-x: hidden; position: relative;
+            overflow-x: hidden; position: relative; transition: background 0.3s ease, color 0.3s ease;
         }
+        /* Звёздное небо / Космос */
         body::before {
             content: ""; position: absolute; width: 100%; height: 100%; top: 0; left: 0;
-            background-image: radial-gradient(white 1px, transparent 0); background-size: 35px 35px; opacity: 0.12; z-index: -1;
+            background-image: radial-gradient(var(--text-color) 1px, transparent 0); background-size: 35px 35px; opacity: var(--stars-opacity); z-index: -1;
         }
         .header-container { width: 100%; max-width: 420px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
         .header-title h1 { font-size: 16px; letter-spacing: 3px; font-weight: 600; color: #38bdf8; text-shadow: 0 0 10px rgba(56,189,248,0.4); }
         .header-title p { font-size: 10px; letter-spacing: 2px; color: var(--text-muted); }
-        .menu-btn { background: var(--card-bg); border: 1px solid var(--border-color); color: var(--text-color); padding: 8px 10px; border-radius: 8px; cursor: pointer; font-size: 16px; }
+        .menu-btn, .theme-btn { background: var(--card-bg); border: 1px solid var(--border-color); color: var(--text-color); padding: 8px 10px; border-radius: 8px; cursor: pointer; font-size: 15px; }
+        
         .sidebar { position: fixed; top: 0; left: -280px; width: 280px; height: 100%; background: var(--card-bg); backdrop-filter: blur(20px); border-right: 1px solid var(--border-color); z-index: 1000; padding: 24px; transition: left 0.3s ease; display: flex; flex-direction: column; justify-content: space-between; }
         .sidebar.open { left: 0; }
         .sidebar-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
@@ -457,6 +472,7 @@ BASE_TEMPLATE = """<!DOCTYPE html>
         .admin-info h4 { font-size: 13px; font-weight: 600; }
         .admin-info p { font-size: 11px; color: #38bdf8; }
         .admin-info span { font-size: 10px; color: var(--text-muted); }
+        
         .card { background: var(--card-bg); backdrop-filter: blur(15px); border: 1px solid var(--border-color); padding: 20px; border-radius: 20px; width: 100%; max-width: 420px; box-shadow: 0 0 35px rgba(14, 165, 233, 0.2); }
         input, select, textarea { width: 100%; padding: 13px; margin-bottom: 12px; border-radius: 10px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-color); font-size: 14px; outline: none; }
         input:focus { border-color: #38bdf8; box-shadow: 0 0 8px rgba(56,189,248,0.3); }
@@ -464,8 +480,9 @@ BASE_TEMPLATE = """<!DOCTYPE html>
         button[type="submit"]:active { transform: scale(0.98); }
         .logout { background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); margin-top: 12px; text-align: center; display: block; text-decoration: none; padding: 11px; border-radius: 10px; color: #fca5a5; font-weight: 600; font-size: 14px; }
         
+        /* Анимация загрузки STELLA */
         #loader {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #070a13;
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg-color);
             display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 9999;
             transition: opacity 0.5s ease;
         }
@@ -473,7 +490,7 @@ BASE_TEMPLATE = """<!DOCTYPE html>
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
-<body>
+<body data-theme="dark">
     <div id="loader">
         <div class="spinner"></div>
         <h2 style="color: #38bdf8; font-size: 14px; letter-spacing: 4px;">STELLA SYSTEM</h2>
@@ -484,6 +501,17 @@ BASE_TEMPLATE = """<!DOCTYPE html>
     <div class="card">REPLACE_CONTENT</div>
 
     <script>
+        // Загрузка темы
+        if (localStorage.getItem('theme') === 'light') {
+            document.body.setAttribute('data-theme', 'light');
+        }
+        function toggleTheme() {
+            const current = document.body.getAttribute('data-theme');
+            const next = current === 'dark' ? 'light' : 'dark';
+            document.body.setAttribute('data-theme', next);
+            localStorage.setItem('theme', next);
+        }
+
         window.addEventListener('load', () => {
             const loader = document.getElementById('loader');
             loader.style.opacity = '0';
@@ -500,7 +528,7 @@ def get_page(content: str, show_full_nav: bool = False) -> str:
         <div class="header-container">
             <button class="menu-btn" onclick="toggleSidebar()">☰</button>
             <div class="header-title" style="text-align: center;"><h1>STELLA SYSTEM</h1><p>CONTROL SYSTEM</p></div>
-            <div style="width: 36px;"></div>
+            <button class="theme-btn" onclick="toggleTheme()" title="Сменить тему">🌓</button>
         </div>
         """
         sidebar_html = f"""
@@ -516,6 +544,7 @@ def get_page(content: str, show_full_nav: bool = False) -> str:
                     <a href="/districts">📍 Районы</a>
                     <a href="/categories">📂 Категории</a>
                     <a href="/products">📦 Товары</a>
+                    <a href="/config-auth" style="color: #38bdf8;">⚙️ Изменить пароль/пин</a>
                     <a href="/logout" style="color: #fca5a5;">🚪 Выход</a>
                 </div>
             </div>
@@ -531,8 +560,10 @@ def get_page(content: str, show_full_nav: bool = False) -> str:
         """
     else:
         header_html = """
-        <div class="header-container" style="justify-content: center;">
+        <div class="header-container" style="justify-content: space-between;">
+            <div style="width: 36px;"></div>
             <div class="header-title" style="text-align: center;"><h1>STELLA SYSTEM</h1><p>ACCESS PORTAL</p></div>
+            <button class="theme-btn" onclick="toggleTheme()" title="Сменить тему">🌓</button>
         </div>
         """
         sidebar_html = ""
@@ -550,8 +581,8 @@ async def index():
             <h3 style="font-size: 15px; color: #38bdf8; letter-spacing: 1px;">Шаг 1: Авторизация</h3>
         </div>
         <form method="POST" action="/verify-login">
-            <input type="text" name="login" placeholder="Логин (admin)" required>
-            <input type="password" name="password" placeholder="Пароль (stella777)" required>
+            <input type="text" name="login" placeholder="Ваш логин" required>
+            <input type="password" name="password" placeholder="Ваш пароль" required>
             <button type="submit">Далее →</button>
         </form>
     """
@@ -559,8 +590,12 @@ async def index():
 
 @app.post("/verify-login", response_class=HTMLResponse)
 async def verify_login(login: str = Form(...), password: str = Form(...)):
-    if login != ADMIN_LOGIN or password != ADMIN_PASSWORD:
+    stored_login = get_config("admin_login")
+    stored_password = get_config("admin_password")
+    
+    if login != stored_login or password != stored_password:
         return RedirectResponse(url="/", status_code=303)
+        
     response = RedirectResponse(url="/pin-page", status_code=303)
     response.set_cookie(key="pre_auth", value="true")
     return response
@@ -576,7 +611,7 @@ async def pin_page(request: Request):
             <h3 style="font-size: 15px; color: #38bdf8; letter-spacing: 1px;">Шаг 2: ПИН-код</h3>
         </div>
         <form method="POST" action="/verify-pin">
-            <input type="password" name="pin_code" placeholder="• • • • (7777)" maxlength="4" inputmode="numeric" style="text-align:center; font-size: 20px; letter-spacing: 8px;" required>
+            <input type="password" name="pin_code" placeholder="• • • •" maxlength="6" inputmode="numeric" style="text-align:center; font-size: 20px; letter-spacing: 8px;" required>
             <button type="submit">Подтвердить вход</button>
         </form>
     """
@@ -587,13 +622,43 @@ async def verify_pin(request: Request, pin_code: str = Form(...)):
     if request.cookies.get("pre_auth") != "true":
         return RedirectResponse(url="/", status_code=303)
         
-    if pin_code != SECRET_PIN:
+    stored_pin = get_config("admin_pin")
+    if pin_code != stored_pin:
         return RedirectResponse(url="/pin-page", status_code=303)
         
     response = RedirectResponse(url="/dashboard", status_code=303)
     response.set_cookie(key="auth", value="true")
     response.delete_cookie(key="pre_auth")
     return response
+
+# Страница изменения логина/пароля/пина для будущих серверов
+@app.get("/config-auth", response_class=HTMLResponse)
+async def config_auth_page(request: Request):
+    if request.cookies.get("auth") != "true":
+        return RedirectResponse(url="/", status_code=303)
+        
+    content = f"""
+        <div style="text-align:center; margin-bottom: 14px;"><h2>Смена данных входа</h2></div>
+        <form method="POST" action="/update-auth-data">
+            <input type="text" name="new_login" value="{get_config('admin_login')}" placeholder="Новый логин" required>
+            <input type="password" name="new_password" placeholder="Новый пароль" required>
+            <input type="password" name="new_pin" value="{get_config('admin_pin')}" placeholder="Новый ПИН-код" required>
+            <button type="submit">Сохранить новые данные</button>
+        </form>
+        <a href='/dashboard' class='logout' style='background: #0284c7; color: #fff; border: none; text-decoration: none;'>← В дашборд</a>
+    """
+    return get_page(content, show_full_nav=True)
+
+@app.post("/update-auth-data", response_class=HTMLResponse)
+async def update_auth_data(request: Request, new_login: str = Form(...), new_password: str = Form(...), new_pin: str = Form(...)):
+    if request.cookies.get("auth") != "true":
+        return RedirectResponse(url="/", status_code=303)
+        
+    set_config("admin_login", new_login.strip())
+    set_config("admin_password", new_password.strip())
+    set_config("admin_pin", new_pin.strip())
+    
+    return RedirectResponse(url="/dashboard", status_code=303)
 
 @app.get("/logout", response_class=HTMLResponse)
 async def logout():
@@ -941,7 +1006,7 @@ async def products_page(request: Request):
     return get_page(content, show_full_nav=True)
 
 @app.post("/add-product", response_class=HTMLResponse)
-async def add_product(request: Request, category: str = Form(...), city: str = Form(...), district: str = Form(...), product_name: str = Form(...), price: float = Form(...), product_link: str = Form("")):
+async def add_product(request: Request, category: str = Form(...), city: str = Form(...), district: str = Form(...), product_name: str = Form(...), price: float = Form(...), product_link:str = Form("")):
     if request.cookies.get("auth") != "true":
         return RedirectResponse(url="/", status_code=303)
 
