@@ -1,4 +1,5 @@
 import os
+import sqlite3
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 import uvicorn
@@ -8,54 +9,121 @@ app = FastAPI()
 
 SECRET_PIN = "7777"
 
-# Базы данных
-CITIES_DB = []
-DISTRICTS_DB = []
-CATEGORIES_DB = []
-PRODUCTS_DB = []
-BOT_CONFIG = {"name": "Не привязан", "token": ""}
+# Инициализация базы данных SQLite
+def init_db():
+    conn = sqlite3.connect("stella.db")
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS config (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS cities (
+            name TEXT PRIMARY KEY
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS districts (
+            city TEXT,
+            district TEXT PRIMARY KEY,
+            items INTEGER DEFAULT 0,
+            usd REAL DEFAULT 0,
+            ltc REAL DEFAULT 0
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS categories (
+            name TEXT PRIMARY KEY
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS products (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            category TEXT,
+            city TEXT,
+            district TEXT,
+            name TEXT,
+            price REAL,
+            product_link TEXT,
+            photo_link TEXT
+        )
+    """)
+    conn.commit()
+    
+    # Значения по умолчанию
+    cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('bot_name', 'Не привязан')")
+    cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('bot_token', '')")
+    cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('welcome_msg', 'Добро пожаловать в STELLA SYSTEM! Выберите город для покупки:')")
+    cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('onetime_msg', 'Оплата прошла успешно! Вот ваш товар:')")
+    
+    # Данные администратора по умолчанию
+    cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('admin_name', 'Admin Stella')")
+    cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('admin_username', '@stella_admin')")
+    cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('admin_id', '777888999')")
+    cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('admin_avatar', 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=200&auto=format&fit=crop')")
+    
+    conn.commit()
+    conn.close()
 
-# Тексты сообщений бота
-BOT_MESSAGES = {
-    "welcome": "Добро пожаловать в STELLA SYSTEM! Выберите город для покупки:",
-    "onetime": "Оплата прошла успешно! Вот ваш товар:"
-}
+init_db()
+
+def get_config(key: str) -> str:
+    conn = sqlite3.connect("stella.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT value FROM config WHERE key = ?", (key,))
+    row = cursor.fetchone()
+    conn.close()
+    return row[0] if row else ""
+
+def set_config(key: str, value: str):
+    conn = sqlite3.connect("stella.db")
+    cursor = conn.cursor()
+    cursor.execute("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", (key, value))
+    conn.commit()
+    conn.close()
 
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
-    if not BOT_CONFIG["token"]:
+    token = get_config("bot_token")
+    if not token:
         return {"ok": True}
     
-    token = BOT_CONFIG["token"]
     api_url = f"https://api.telegram.org/bot{token}"
 
     try:
         data = await request.json()
         
-        # 1. Обработка текстовых команд
         if "message" in data:
             chat_id = data["message"]["chat"]["id"]
             text = data["message"].get("text", "")
             
             if text == "/start":
-                if not CITIES_DB:
+                conn = sqlite3.connect("stella.db")
+                cursor = conn.cursor()
+                cursor.execute("SELECT name FROM cities")
+                cities = [row[0] for row in cursor.fetchall()]
+                conn.close()
+
+                if not cities:
                     async with httpx.AsyncClient() as client:
                         await client.post(f"{api_url}/sendMessage", json={
                             "chat_id": chat_id,
-                            "text": "В данный момент в боте нет доступных городов. Добавьте их в панели управления."
+                            "text": "В данный момент в боте нет доступных городов."
                         })
                     return {"ok": True}
 
-                keyboard = {"inline_keyboard": [[{"text": f"🏙️ {city}", "callback_data": f"city_{city}"}]] for city in CITIES_DB}
+                keyboard = {"inline_keyboard": [[{"text": f"🏙️ {city}", "callback_data": f"city_{city}"}]] for city in cities}
                 
+                welcome_msg = get_config("welcome_msg")
                 async with httpx.AsyncClient() as client:
                     await client.post(f"{api_url}/sendMessage", json={
                         "chat_id": chat_id,
-                        "text": BOT_MESSAGES["welcome"],
+                        "text": welcome_msg,
                         "reply_markup": keyboard
                     })
 
-        # 2. Обработка нажатий на инлайн-кнопки
         elif "callback_query" in data:
             cq = data["callback_query"]
             chat_id = cq["message"]["chat"]["id"]
@@ -63,23 +131,26 @@ async def telegram_webhook(request: Request):
             query_id = cq["id"]
 
             async with httpx.AsyncClient() as client:
-                # Обязательно гасим «часики» на кнопке
                 await client.post(f"{api_url}/answerCallbackQuery", json={"callback_query_id": query_id})
 
-                # Выбор города
+                conn = sqlite3.connect("stella.db")
+                cursor = conn.cursor()
+
                 if callback_data.startswith("city_"):
                     selected_city = callback_data.replace("city_", "")
-                    filtered_districts = [d for d in DISTRICTS_DB if d["city"] == selected_city]
+                    cursor.execute("SELECT district FROM districts WHERE city = ?", (selected_city,))
+                    districts = [row[0] for row in cursor.fetchall()]
 
-                    if not filtered_districts:
+                    if not districts:
                         await client.post(f"{api_url}/sendMessage", json={
                             "chat_id": chat_id,
-                            "text": f"В городе <b>{selected_city}</b> пока не добавлены районы. Перейдите в панель управления и добавьте их.",
+                            "text": f"В городе <b>{selected_city}</b> пока нет районов.",
                             "parse_mode": "HTML"
                         })
+                        conn.close()
                         return {"ok": True}
 
-                    keyboard = {"inline_keyboard": [[{"text": f"📍 {d['district']}", "callback_data": f"dist_{d['district']}"}]] for filtered_districts in [filtered_districts] for d in filtered_districts}
+                    keyboard = {"inline_keyboard": [[{"text": f"📍 {d}", "callback_data": f"dist_{d}"}]] for d in districts}
                     await client.post(f"{api_url}/sendMessage", json={
                         "chat_id": chat_id,
                         "text": f"Город: <b>{selected_city}</b>. Выберите район:",
@@ -87,18 +158,20 @@ async def telegram_webhook(request: Request):
                         "reply_markup": keyboard
                     })
 
-                # Выбор района
                 elif callback_data.startswith("dist_"):
                     selected_district = callback_data.replace("dist_", "")
+                    cursor.execute("SELECT name FROM categories")
+                    categories = [row[0] for row in cursor.fetchall()]
                     
-                    if not CATEGORIES_DB:
+                    if not categories:
                         await client.post(f"{api_url}/sendMessage", json={
                             "chat_id": chat_id,
-                            "text": "В данный момент категории товаров не настроены."
+                            "text": "Категории не настроены."
                         })
+                        conn.close()
                         return {"ok": True}
 
-                    keyboard = {"inline_keyboard": [[{"text": f"📂 {cat}", "callback_data": f"cat_{selected_district}_{cat}"}]] for cat in CATEGORIES_DB}
+                    keyboard = {"inline_keyboard": [[{"text": f"📂 {cat}", "callback_data": f"cat_{selected_district}_{cat}"}]] for cat in categories}
                     await client.post(f"{api_url}/sendMessage", json={
                         "chat_id": chat_id,
                         "text": f"Район: <b>{selected_district}</b>. Выберите категорию:",
@@ -106,22 +179,23 @@ async def telegram_webhook(request: Request):
                         "reply_markup": keyboard
                     })
 
-                # Выбор категории
                 elif callback_data.startswith("cat_"):
                     parts = callback_data.replace("cat_", "").split("_", 1)
                     selected_district = parts[0]
                     selected_cat = parts[1]
 
-                    filtered_products = [p for p in PRODUCTS_DB if p["district"] == selected_district and p["category"] == selected_cat]
+                    cursor.execute("SELECT name, price FROM products WHERE district = ? AND category = ?", (selected_district, selected_cat))
+                    products = cursor.fetchall()
 
-                    if not filtered_products:
+                    if not products:
                         await client.post(f"{api_url}/sendMessage", json={
                             "chat_id": chat_id,
-                            "text": f"В категории «{selected_cat}» для района «{selected_district}» пока нет товаров."
+                            "text": f"В этой категории пока нет товаров."
                         })
+                        conn.close()
                         return {"ok": True}
 
-                    keyboard = {"inline_keyboard": [[{"text": f"📦 {p['name']} — ${p['price']}", "callback_data": f"buy_{p['name']}"}]] for p in filtered_products}
+                    keyboard = {"inline_keyboard": [[{"text": f"📦 {p[0]} — ${p[1]}", "callback_data": f"buy_{p[0]}"}]] for p in products}
                     await client.post(f"{api_url}/sendMessage", json={
                         "chat_id": chat_id,
                         "text": f"Категория: <b>{selected_cat}</b>. Выберите товар:",
@@ -129,20 +203,21 @@ async def telegram_webhook(request: Request):
                         "reply_markup": keyboard
                     })
 
-                # Покупка / выдача товара
                 elif callback_data.startswith("buy_"):
                     prod_name = callback_data.replace("buy_", "")
-                    product = next((p for p in PRODUCTS_DB if p["name"] == prod_name), None)
+                    cursor.execute("SELECT name, product_link, photo_link FROM products WHERE name = ?", (prod_name,))
+                    product = cursor.fetchone()
 
                     if product:
-                        delivery_text = f"{BOT_MESSAGES['onetime']}\n\n<b>{product['name']}</b>\n"
-                        if product['product_link']:
-                            delivery_text += f"🔗 Ссылка: {product['product_link']}"
+                        onetime_msg = get_config("onetime_msg")
+                        delivery_text = f"{onetime_msg}\n\n<b>{product[0]}</b>\n"
+                        if product[1]:
+                            delivery_text += f"🔗 Ссылка: {product[1]}"
 
-                        if product['photo_link']:
+                        if product[2]:
                             await client.post(f"{api_url}/sendPhoto", json={
                                 "chat_id": chat_id,
-                                "photo": product['photo_link'],
+                                "photo": product[2],
                                 "caption": delivery_text,
                                 "parse_mode": "HTML"
                             })
@@ -152,6 +227,7 @@ async def telegram_webhook(request: Request):
                                 "text": delivery_text,
                                 "parse_mode": "HTML"
                             })
+                conn.close()
 
     except Exception as e:
         print(f"Webhook error: {e}")
@@ -245,15 +321,28 @@ BASE_TEMPLATE = """<!DOCTYPE html>
             position: fixed; top: 0; left: -280px; width: 280px; height: 100%;
             background: var(--card-bg); backdrop-filter: blur(20px);
             border-right: 1px solid var(--border-color); z-index: 1000; padding: 24px;
-            transition: left 0.3s ease;
+            transition: left 0.3s ease; display: flex; flex-direction: column; justify-content: space-between;
         }
         .sidebar.open { left: 0; }
-        .sidebar-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+        .sidebar-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
         .sidebar-menu a {
-            display: block; color: var(--text-color); text-decoration: none; padding: 12px 0;
+            display: block; color: var(--text-color); text-decoration: none; padding: 10px 0;
             border-bottom: 1px solid var(--input-border); font-size: 14px; font-weight: 500;
         }
         .sidebar-menu a:hover { color: #38bdf8; }
+
+        /* Блок профиля в сайдбаре */
+        .admin-profile {
+            background: var(--input-bg); border: 1px solid var(--border-color); padding: 12px;
+            border-radius: 12px; display: flex; align-items: center; gap: 12px; margin-top: 15px;
+        }
+        .admin-avatar {
+            width: 42px; height: 42px; border-radius: 50%; object-fit: cover;
+            border: 1px solid #38bdf8;
+        }
+        .admin-info h4 { font-size: 13px; font-weight: 600; color: var(--text-color); }
+        .admin-info p { font-size: 11px; color: #38bdf8; }
+        .admin-info span { font-size: 10px; color: var(--text-muted); display: block; }
 
         .theme-toggle {
             background: var(--card-bg); border: 1px solid var(--border-color); color: var(--text-color);
@@ -381,21 +470,40 @@ def get_page(content: str, title: str = "STELLA SYSTEM", show_intro: bool = Fals
             <button class="theme-toggle" onclick="toggleTheme()">🌓</button>
         </div>
         """
-        sidebar_html = """
+        
+        # Получаем данные администратора из базы для сайдбара
+        adm_name = get_config("admin_name")
+        adm_user = get_config("admin_username")
+        adm_id = get_config("admin_id")
+        adm_avatar = get_config("admin_avatar")
+
+        sidebar_html = f"""
         <div id="sidebar" class="sidebar">
-            <div class="sidebar-header">
-                <h3>Управление</h3>
-                <button class="menu-btn" onclick="toggleSidebar()">✕</button>
+            <div>
+                <div class="sidebar-header">
+                    <h3>Управление</h3>
+                    <button class="menu-btn" onclick="toggleSidebar()">✕</button>
+                </div>
+                <div class="sidebar-menu">
+                    <a href="/dashboard">📊 Статистика и Графика</a>
+                    <a href="/bot-settings">🤖 Настройки бота</a>
+                    <a href="/bot-messages">💬 Сообщения бота</a>
+                    <a href="/cities">🏙️ Управление городами</a>
+                    <a href="/districts">📍 Управление районами</a>
+                    <a href="/categories">📂 Категории</a>
+                    <a href="/products">📦 Товары и выдача</a>
+                    <a href="/" style="color: #fca5a5;">🚪 Выход</a>
+                </div>
             </div>
-            <div class="sidebar-menu">
-                <a href="/dashboard">📊 Статистика и Графика</a>
-                <a href="/bot-settings">🤖 Настройки бота</a>
-                <a href="/bot-messages">💬 Сообщения бота</a>
-                <a href="/cities">🏙️ Управление городами</a>
-                <a href="/districts">📍 Управление районами</a>
-                <a href="/categories">📂 Категории</a>
-                <a href="/products">📦 Товары и выдача</a>
-                <a href="/" style="color: #fca5a5;">🚪 Выход</a>
+
+            <!-- Блок профиля администратора -->
+            <div class="admin-profile">
+                <img src="{adm_avatar}" alt="Avatar" class="admin-avatar">
+                <div class="admin-info">
+                    <h4>{adm_name}</h4>
+                    <p>{adm_user}</p>
+                    <span>ID: {adm_id}</span>
+                </div>
             </div>
         </div>
         """
@@ -452,6 +560,7 @@ async def dashboard_get():
 
 @app.get("/bot-settings", response_class=HTMLResponse)
 async def bot_settings_page(status: str = None):
+    bot_name = get_config("bot_name")
     popup_script = ""
     if status == "success":
         popup_script = "<script>window.addEventListener('load', () => showPopup(true, 'Изменено'));</script>"
@@ -466,7 +575,7 @@ async def bot_settings_page(status: str = None):
 
         <div style="background: var(--input-bg); padding: 12px; border-radius: 12px; border: 1px solid var(--border-color); margin-bottom: 14px;">
             <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">ТЕКУЩИЙ СТАТУС:</p>
-            <h3 style="font-size: 14px; color: #4ade80; margin-bottom: 10px;">🤖 {BOT_CONFIG['name']}</h3>
+            <h3 style="font-size: 14px; color: #4ade80; margin-bottom: 10px;">🤖 {bot_name}</h3>
         </div>
 
         <form method="POST" action="/update-bot" style="background: var(--input-bg); padding: 12px; border-radius: 12px; border: 1px solid var(--border-color); margin-bottom: 16px;">
@@ -484,8 +593,8 @@ async def bot_settings_page(status: str = None):
 @app.post("/update-bot", response_class=HTMLResponse)
 async def update_bot(request: Request, bot_name: str = Form(...), bot_token: str = Form(...)):
     if bot_name and bot_token:
-        BOT_CONFIG["name"] = bot_name
-        BOT_CONFIG["token"] = bot_token
+        set_config("bot_name", bot_name)
+        set_config("bot_token", bot_token)
         
         host_url = str(request.base_url).rstrip('/')
         webhook_url = f"{host_url}/webhook"
@@ -497,6 +606,9 @@ async def update_bot(request: Request, bot_name: str = Form(...), bot_token: str
 
 @app.get("/bot-messages", response_class=HTMLResponse)
 async def bot_messages_page(status: str = None):
+    welcome_msg = get_config("welcome_msg")
+    onetime_msg = get_config("onetime_msg")
+    
     popup_script = ""
     if status == "success":
         popup_script = "<script>window.addEventListener('load', () => showPopup(true, 'Изменено'));</script>"
@@ -511,10 +623,10 @@ async def bot_messages_page(status: str = None):
 
         <form method="POST" action="/update-bot-messages" style="background: var(--input-bg); padding: 12px; border-radius: 12px; border: 1px solid var(--border-color); margin-bottom: 16px;">
             <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 6px; font-weight: 600;">👋 ПРИВЕТСТВИЕ (/start):</p>
-            <textarea name="welcome_msg" rows="3" required style="margin-bottom: 10px;">{BOT_MESSAGES['welcome']}</textarea>
+            <textarea name="welcome_msg" rows="3" required style="margin-bottom: 10px;">{welcome_msg}</textarea>
             
             <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 6px; font-weight: 600;">⚡ ОДНОРАЗОВОЕ СООБЩЕНИЕ (ПОСЛЕ ОПЛАТЫ):</p>
-            <textarea name="onetime_msg" rows="3" required style="margin-bottom: 10px;">{BOT_MESSAGES['onetime']}</textarea>
+            <textarea name="onetime_msg" rows="3" required style="margin-bottom: 10px;">{onetime_msg}</textarea>
 
             <button type="submit">Сохранить сообщения</button>
         </form>
@@ -527,18 +639,24 @@ async def bot_messages_page(status: str = None):
 @app.post("/update-bot-messages", response_class=HTMLResponse)
 async def update_bot_messages(welcome_msg: str = Form(...), onetime_msg: str = Form(...)):
     if welcome_msg and onetime_msg:
-        BOT_MESSAGES["welcome"] = welcome_msg
-        BOT_MESSAGES["onetime"] = onetime_msg
+        set_config("welcome_msg", welcome_msg)
+        set_config("onetime_msg", onetime_msg)
         return RedirectResponse(url="/bot-messages?status=success", status_code=303)
     return RedirectResponse(url="/bot-messages?status=error", status_code=303)
 
 @app.get("/cities", response_class=HTMLResponse)
 async def cities_page(status: str = None):
+    conn = sqlite3.connect("stella.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT name FROM cities")
+    cities = [row[0] for row in cursor.fetchall()]
+    conn.close()
+
     list_html = "".join([f"""
         <div style="display: flex; justify-content: space-between; align-items: center; background: var(--input-bg); padding: 10px 12px; border-radius: 8px; margin-bottom: 8px; border: 1px solid var(--input-border);">
             <span style="font-size: 13px; font-weight: 600;">🏙️ {c}</span>
         </div>
-    """ for c in CITIES_DB]) if CITIES_DB else '<p style="font-size: 11px; color: var(--text-muted); text-align: center;">Города еще не добавлены</p>'
+    """ for c in cities]) if cities else '<p style="font-size: 11px; color: var(--text-muted); text-align: center;">Города еще не добавлены</p>'
 
     popup_script = ""
     if status == "success":
@@ -572,23 +690,39 @@ async def cities_page(status: str = None):
 
 @app.post("/add-city", response_class=HTMLResponse)
 async def add_city(city_name: str = Form(...)):
-    if city_name and city_name not in CITIES_DB:
-        CITIES_DB.append(city_name)
-        return RedirectResponse(url="/cities?status=success", status_code=303)
+    if city_name:
+        conn = sqlite3.connect("stella.db")
+        cursor = conn.cursor()
+        try:
+            cursor.execute("INSERT INTO cities (name) VALUES (?)", (city_name,))
+            conn.commit()
+            conn.close()
+            return RedirectResponse(url="/cities?status=success", status_code=303)
+        except Exception:
+            conn.close()
     return RedirectResponse(url="/cities?status=error", status_code=303)
 
 @app.get("/districts", response_class=HTMLResponse)
 async def districts_page(status: str = None):
-    city_options = "".join([f'<option value="{c}">{c}</option>' for c in CITIES_DB])
+    conn = sqlite3.connect("stella.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT name FROM cities")
+    cities = [row[0] for row in cursor.fetchall()]
+    
+    cursor.execute("SELECT city, district FROM districts")
+    districts = cursor.fetchall()
+    conn.close()
+
+    city_options = "".join([f'<option value="{c}">{c}</option>' for c in cities])
     
     list_html = "".join([f"""
         <div style="background: var(--input-bg); padding: 10px 12px; border-radius: 8px; margin-bottom: 8px; border: 1px solid var(--input-border);">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                <span style="font-size: 13px; font-weight: 600;">{d['district']}</span>
-                <span style="font-size: 11px; color: var(--text-muted);">Город: {d['city']}</span>
+                <span style="font-size: 13px; font-weight: 600;">{d[1]}</span>
+                <span style="font-size: 11px; color: var(--text-muted);">Город: {d[0]}</span>
             </div>
         </div>
-    """ for d in DISTRICTS_DB]) if DISTRICTS_DB else '<p style="font-size: 11px; color: var(--text-muted); text-align: center;">Районы еще не добавлены</p>'
+    """ for d in districts]) if districts else '<p style="font-size: 11px; color: var(--text-muted); text-align: center;">Районы еще не добавлены</p>'
 
     popup_script = ""
     if status == "success":
@@ -627,17 +761,30 @@ async def districts_page(status: str = None):
 @app.post("/add-district", response_class=HTMLResponse)
 async def add_district(city: str = Form(...), district_name: str = Form(...)):
     if city and district_name:
-        DISTRICTS_DB.append({"city": city, "district": district_name, "items": 0, "usd": 0, "ltc": 0})
-        return RedirectResponse(url="/districts?status=success", status_code=303)
+        conn = sqlite3.connect("stella.db")
+        cursor = conn.cursor()
+        try:
+            cursor.execute("INSERT INTO districts (city, district) VALUES (?, ?)", (city, district_name))
+            conn.commit()
+            conn.close()
+            return RedirectResponse(url="/districts?status=success", status_code=303)
+        except Exception:
+            conn.close()
     return RedirectResponse(url="/districts?status=error", status_code=303)
 
 @app.get("/categories", response_class=HTMLResponse)
 async def categories_page(status: str = None):
+    conn = sqlite3.connect("stella.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT name FROM categories")
+    categories = [row[0] for row in cursor.fetchall()]
+    conn.close()
+
     list_html = "".join([f"""
         <div style="display: flex; justify-content: space-between; align-items: center; background: var(--input-bg); padding: 10px 12px; border-radius: 8px; margin-bottom: 8px; border: 1px solid var(--input-border);">
             <span style="font-size: 13px; font-weight: 600;">📂 {cat}</span>
         </div>
-    """ for cat in CATEGORIES_DB]) if CATEGORIES_DB else '<p style="font-size: 11px; color: var(--text-muted); text-align: center;">Категории не добавлены</p>'
+    """ for cat in categories]) if categories else '<p style="font-size: 11px; color: var(--text-muted); text-align: center;">Категории не добавлены</p>'
 
     popup_script = ""
     if status == "success":
@@ -671,28 +818,50 @@ async def categories_page(status: str = None):
 
 @app.post("/add-category", response_class=HTMLResponse)
 async def add_category(category_name: str = Form(...)):
-    if category_name and category_name not in CATEGORIES_DB:
-        CATEGORIES_DB.append(category_name)
-        return RedirectResponse(url="/categories?status=success", status_code=303)
+    if category_name:
+        conn = sqlite3.connect("stella.db")
+        cursor = conn.cursor()
+        try:
+            cursor.execute("INSERT INTO categories (name) VALUES (?)", (category_name,))
+            conn.commit()
+            conn.close()
+            return RedirectResponse(url="/categories?status=success", status_code=303)
+        except Exception:
+            conn.close()
     return RedirectResponse(url="/categories?status=error", status_code=303)
 
 @app.get("/products", response_class=HTMLResponse)
 async def products_page(status: str = None):
-    cat_options = "".join([f'<option value="{c}">{c}</option>' for c in CATEGORIES_DB])
-    city_options = "".join([f'<option value="{c}">{c}</option>' for c in CITIES_DB])
-    district_options = "".join([f'<option value="{d["district"]}">{d["district"]} ({d["city"]})</option>' for d in DISTRICTS_DB])
+    conn = sqlite3.connect("stella.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT name FROM categories")
+    categories = [row[0] for row in cursor.fetchall()]
+    
+    cursor.execute("SELECT name FROM cities")
+    cities = [row[0] for row in cursor.fetchall()]
+
+    cursor.execute("SELECT district, city FROM districts")
+    districts = cursor.fetchall()
+
+    cursor.execute("SELECT category, city, district, name, price, product_link, photo_link FROM products")
+    products = cursor.fetchall()
+    conn.close()
+
+    cat_options = "".join([f'<option value="{c}">{c}</option>' for c in categories])
+    city_options = "".join([f'<option value="{c}">{c}</option>' for c in cities])
+    district_options = "".join([f'<option value="{d[0]}">{d[0]} ({d[1]})</option>' for d in districts])
 
     list_html = "".join([f"""
         <div style="background: var(--input-bg); padding: 10px 12px; border-radius: 8px; margin-bottom: 8px; border: 1px solid var(--input-border);">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                <span style="font-size: 13px; font-weight: 600;">📦 {p['name']}</span>
-                <span style="font-size: 11px; color: #38bdf8;">${p['price']}</span>
+                <span style="font-size: 13px; font-weight: 600;">📦 {p[3]}</span>
+                <span style="font-size: 11px; color: #38bdf8;">${p[4]}</span>
             </div>
-            <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Район: {p['district']} ({p['city']})</div>
-            {"<div style='font-size: 11px; color: #4ade80; word-break: break-all;'>🔗 Ссылка: <a href='" + p['product_link'] + "' target='_blank' style='color: #4ade80;'>Перейти</a></div>" if p['product_link'] else ""}
-            {"<div style='font-size: 11px; color: #38bdf8; word-break: break-all;'>🖼️ Фото: <a href='" + p['photo_link'] + "' target='_blank' style='color: #38bdf8;'>Смотреть</a></div>" if p['photo_link'] else ""}
+            <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Район: {p[2]} ({p[1]})</div>
+            {"<div style='font-size: 11px; color: #4ade80; word-break: break-all;'>🔗 Ссылка: <a href='" + p[5] + "' target='_blank' style='color: #4ade80;'>Перейти</a></div>" if p[5] else ""}
+            {"<div style='font-size: 11px; color: #38bdf8; word-break: break-all;'>🖼️ Фото: <a href='" + p[6] + "' target='_blank' style='color: #38bdf8;'>Смотреть</a></div>" if p[6] else ""}
         </div>
-    """ for p in PRODUCTS_DB]) if PRODUCTS_DB else '<p style="font-size: 11px; color: var(--text-muted); text-align: center;">Товары еще не добавлены</p>'
+    """ for p in products]) if products else '<p style="font-size: 11px; color: var(--text-muted); text-align: center;">Товары еще не добавлены</p>'
 
     popup_script = ""
     if status == "success":
@@ -742,21 +911,25 @@ async def products_page(status: str = None):
 @app.post("/add-product", response_class=HTMLResponse)
 async def add_product(category: str = Form(...), city: str = Form(...), district: str = Form(...), product_name: str = Form(...), price: float = Form(...), product_link: str = Form(""), photo_link: str = Form("")):
     if category and city and district and product_name and (product_link or photo_link):
-        PRODUCTS_DB.append({
-            "category": category,
-            "city": city,
-            "district": district,
-            "name": product_name,
-            "price": price,
-            "product_link": product_link,
-            "photo_link": photo_link
-        })
+        conn = sqlite3.connect("stella.db")
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO products (category, city, district, name, price, product_link, photo_link) VALUES (?, ?, ?, ?, ?, ?, ?)", 
+                       (category, city, district, product_name, price, product_link, photo_link))
+        conn.commit()
+        conn.close()
         return RedirectResponse(url="/products?status=success", status_code=303)
     return RedirectResponse(url="/products?status=error", status_code=303)
 
 async def render_main_dashboard(intro: bool = True):
-    labels = [d['district'] for d in DISTRICTS_DB] if DISTRICTS_DB else ["Нет районов"]
-    items_data = [d['items'] for d in DISTRICTS_DB] if DISTRICTS_DB else [0]
+    conn = sqlite3.connect("stella.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT district, items FROM districts")
+    districts_data = cursor.fetchall()
+    conn.close()
+
+    labels = [d[0] for d in districts_data] if districts_data else ["Нет районов"]
+    items_data = [d[1] for d in districts_data] if districts_data else [0]
+    bot_name = get_config("bot_name")
 
     dashboard_content = """
         <div style="text-align:center; margin-bottom: 12px;">
@@ -873,7 +1046,7 @@ async def render_main_dashboard(intro: bool = True):
     labels_json = json.dumps(labels, ensure_ascii=False)
     items_json = json.dumps(items_data, ensure_ascii=False)
     
-    final_content = dashboard_content.replace("__BOT_NAME__", BOT_CONFIG["name"]).replace("__DISTRICTS_LABELS__", labels_json).replace("__DISTRICTS_ITEMS__", items_json)
+    final_content = dashboard_content.replace("__BOT_NAME__", bot_name).replace("__DISTRICTS_LABELS__", labels_json).replace("__DISTRICTS_ITEMS__", items_json)
     return get_page(final_content, "STELLA SYSTEM - DASHBOARD", show_intro=intro, show_full_nav=True)
 
 if __name__ == "__main__":
