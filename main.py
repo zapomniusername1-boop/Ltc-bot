@@ -157,7 +157,7 @@ async def telegram_webhook(request: Request):
                         })
                     return {"ok": True}
 
-                # Используем индексы для кнопок городов, чтобы избежать багов кодировки
+                # Используем индексы для кнопок городов, чтобы избежать зависаний
                 keyboard = {"inline_keyboard": [[{"text": f"🏙️ {city}", "callback_data": f"city_{i}"}]] for i, city in enumerate(cities)}
                 
                 welcome_msg = get_config("welcome_msg")
@@ -177,6 +177,7 @@ async def telegram_webhook(request: Request):
             query_id = cq["id"]
 
             async with httpx.AsyncClient() as client:
+                # Гасим крутилку загрузки на кнопке в Telegram
                 await client.post(f"{api_url}/answerCallbackQuery", json={"callback_query_id": query_id})
 
                 conn = sqlite3.connect(DB_PATH)
