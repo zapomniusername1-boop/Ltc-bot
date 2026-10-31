@@ -157,7 +157,8 @@ async def telegram_webhook(request: Request):
                         })
                     return {"ok": True}
 
-                keyboard = {"inline_keyboard": [[{"text": f"🏙️ {city}", "callback_data": f"city_{city}"}]] for city in cities}
+                # Используем индексы для кнопок городов, чтобы избежать багов кодировки
+                keyboard = {"inline_keyboard": [[{"text": f"🏙️ {city}", "callback_data": f"city_{i}"}]] for i, city in enumerate(cities)}
                 
                 welcome_msg = get_config("welcome_msg")
                 async with httpx.AsyncClient() as client:
@@ -182,7 +183,20 @@ async def telegram_webhook(request: Request):
                 cursor = conn.cursor()
 
                 if callback_data.startswith("city_"):
-                    selected_city = callback_data.replace("city_", "")
+                    city_index = int(callback_data.replace("city_", ""))
+                    cursor.execute("SELECT name FROM cities")
+                    cities_list = [row[0] for row in cursor.fetchall()]
+                    
+                    if city_index < len(cities_list):
+                        selected_city = cities_list[city_index]
+                    else:
+                        await client.post(f"{api_url}/sendMessage", json={
+                            "chat_id": chat_id,
+                            "text": "⚠️ Ошибка: Город не найден. Введите /start заново."
+                        })
+                        conn.close()
+                        return {"ok": True}
+
                     cursor.execute("SELECT district FROM districts WHERE city = ?", (selected_city,))
                     districts = [row[0] for row in cursor.fetchall()]
 
@@ -195,7 +209,7 @@ async def telegram_webhook(request: Request):
                         conn.close()
                         return {"ok": True}
 
-                    keyboard = {"inline_keyboard": [[{"text": f"📍 {d}", "callback_data": f"dist_{d}"}]] for d in districts}
+                    keyboard = {"inline_keyboard": [[{"text": f"📍 {d}", "callback_data": f"dist_{i}"}]] for i, d in enumerate(districts)}
                     await client.post(f"{api_url}/sendMessage", json={
                         "chat_id": chat_id,
                         "text": f"Город: <b>{selected_city}</b>. Выберите район:",
@@ -204,7 +218,16 @@ async def telegram_webhook(request: Request):
                     })
 
                 elif callback_data.startswith("dist_"):
-                    selected_district = callback_data.replace("dist_", "")
+                    dist_index = int(callback_data.replace("dist_", ""))
+                    cursor.execute("SELECT district FROM districts")
+                    districts_list = [row[0] for row in cursor.fetchall()]
+                    
+                    if dist_index < len(districts_list):
+                        selected_district = districts_list[dist_index]
+                    else:
+                        conn.close()
+                        return {"ok": True}
+
                     cursor.execute("SELECT name FROM categories")
                     categories = [row[0] for row in cursor.fetchall()]
                     
@@ -216,7 +239,7 @@ async def telegram_webhook(request: Request):
                         conn.close()
                         return {"ok": True}
 
-                    keyboard = {"inline_keyboard": [[{"text": f"📂 {cat}", "callback_data": f"cat_{selected_district}_{cat}"}]] for cat in categories}
+                    keyboard = {"inline_keyboard": [[{"text": f"📂 {cat}", "callback_data": f"cat_{cat}"}]] for cat in categories}
                     await client.post(f"{api_url}/sendMessage", json={
                         "chat_id": chat_id,
                         "text": f"Район: <b>{selected_district}</b>. Выберите категорию:",
@@ -225,11 +248,9 @@ async def telegram_webhook(request: Request):
                     })
 
                 elif callback_data.startswith("cat_"):
-                    parts = callback_data.replace("cat_", "").split("_", 1)
-                    selected_district = parts[0]
-                    selected_cat = parts[1]
+                    selected_cat = callback_data.replace("cat_", "")
 
-                    cursor.execute("SELECT name, price FROM products WHERE district = ? AND category = ?", (selected_district, selected_cat))
+                    cursor.execute("SELECT name, price FROM products WHERE category = ?", (selected_cat,))
                     products = cursor.fetchall()
 
                     if not products:
@@ -723,7 +744,6 @@ async def update_bot_messages(welcome_msg: str = Form(...), onetime_msg: str = F
         return RedirectResponse(url="/bot-messages?status=success", status_code=303)
     return RedirectResponse(url="/bot-messages?status=error", status_code=303)
 
-# --- УПРАВЛЕНИЕ ГОРОДАМИ (С УДАЛЕНИЕМ) ---
 @app.get("/cities", response_class=HTMLResponse)
 async def cities_page(status: str = None):
     conn = sqlite3.connect(DB_PATH)
@@ -798,7 +818,6 @@ async def delete_city(city_name: str = Form(...)):
         return RedirectResponse(url="/cities?status=success", status_code=303)
     return RedirectResponse(url="/cities?status=error", status_code=303)
 
-# --- УПРАВЛЕНИЕ РАЙОНАМИ (С УДАЛЕНИЕМ) ---
 @app.get("/districts", response_class=HTMLResponse)
 async def districts_page(status: str = None):
     conn = sqlite3.connect(DB_PATH)
