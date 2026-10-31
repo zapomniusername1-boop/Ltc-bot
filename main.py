@@ -157,8 +157,8 @@ async def telegram_webhook(request: Request):
                         })
                     return {"ok": True}
 
-                # Используем индексы для кнопок городов, чтобы избежать зависаний
-                keyboard = {"inline_keyboard": [[{"text": f"🏙️ {city}", "callback_data": f"city_{i}"}]] for i, city in enumerate(cities)}
+                # Передаем название города прямо в callback_data (ограничено по длине, но города короткие)
+                keyboard = {"inline_keyboard": [[{"text": f"🏙️ {city}", "callback_data": f"city_{city}"}]] for city in cities}
                 
                 welcome_msg = get_config("welcome_msg")
                 async with httpx.AsyncClient() as client:
@@ -177,27 +177,15 @@ async def telegram_webhook(request: Request):
             query_id = cq["id"]
 
             async with httpx.AsyncClient() as client:
-                # Гасим крутилку загрузки на кнопке в Telegram
+                # Обязательно гасим крутилку загрузки в Telegram
                 await client.post(f"{api_url}/answerCallbackQuery", json={"callback_query_id": query_id})
 
                 conn = sqlite3.connect(DB_PATH)
                 cursor = conn.cursor()
 
                 if callback_data.startswith("city_"):
-                    city_index = int(callback_data.replace("city_", ""))
-                    cursor.execute("SELECT name FROM cities")
-                    cities_list = [row[0] for row in cursor.fetchall()]
+                    selected_city = callback_data.replace("city_", "").strip()
                     
-                    if city_index < len(cities_list):
-                        selected_city = cities_list[city_index]
-                    else:
-                        await client.post(f"{api_url}/sendMessage", json={
-                            "chat_id": chat_id,
-                            "text": "⚠️ Ошибка: Город не найден. Введите /start заново."
-                        })
-                        conn.close()
-                        return {"ok": True}
-
                     cursor.execute("SELECT district FROM districts WHERE city = ?", (selected_city,))
                     districts = [row[0] for row in cursor.fetchall()]
 
@@ -210,7 +198,7 @@ async def telegram_webhook(request: Request):
                         conn.close()
                         return {"ok": True}
 
-                    keyboard = {"inline_keyboard": [[{"text": f"📍 {d}", "callback_data": f"dist_{i}"}]] for i, d in enumerate(districts)}
+                    keyboard = {"inline_keyboard": [[{"text": f"📍 {d}", "callback_data": f"dist_{d}"}]] for d in districts}
                     await client.post(f"{api_url}/sendMessage", json={
                         "chat_id": chat_id,
                         "text": f"Город: <b>{selected_city}</b>. Выберите район:",
@@ -219,16 +207,8 @@ async def telegram_webhook(request: Request):
                     })
 
                 elif callback_data.startswith("dist_"):
-                    dist_index = int(callback_data.replace("dist_", ""))
-                    cursor.execute("SELECT district FROM districts")
-                    districts_list = [row[0] for row in cursor.fetchall()]
+                    selected_district = callback_data.replace("dist_", "").strip()
                     
-                    if dist_index < len(districts_list):
-                        selected_district = districts_list[dist_index]
-                    else:
-                        conn.close()
-                        return {"ok": True}
-
                     cursor.execute("SELECT name FROM categories")
                     categories = [row[0] for row in cursor.fetchall()]
                     
@@ -240,7 +220,7 @@ async def telegram_webhook(request: Request):
                         conn.close()
                         return {"ok": True}
 
-                    keyboard = {"inline_keyboard": [[{"text": f"📂 {cat}", "callback_data": f"cat_{cat}"}]] for cat in categories}
+                    keyboard = {"inline_keyboard": [[{"text": f"📂 {cat}", "callback_data": f"cat_{selected_district}_{cat}"}]] for cat in categories}
                     await client.post(f"{api_url}/sendMessage", json={
                         "chat_id": chat_id,
                         "text": f"Район: <b>{selected_district}</b>. Выберите категорию:",
@@ -249,15 +229,22 @@ async def telegram_webhook(request: Request):
                     })
 
                 elif callback_data.startswith("cat_"):
-                    selected_cat = callback_data.replace("cat_", "")
+                    parts = callback_data.replace("cat_", "").split("_", 1)
+                    if len(parts) < 2:
+                        conn.close()
+                        return {"ok": True}
+                    
+                    selected_district = parts[0]
+                    selected_cat = parts[1]
 
-                    cursor.execute("SELECT name, price FROM products WHERE category = ?", (selected_cat,))
+                    cursor.execute("SELECT name, price FROM products WHERE district = ? AND category = ?", (selected_district, selected_cat))
                     products = cursor.fetchall()
 
                     if not products:
                         await client.post(f"{api_url}/sendMessage", json={
                             "chat_id": chat_id,
-                            "text": f"📦 В этой категории пока нет товаров."
+                            "text": f"📦 В этой категории для района <b>{selected_district}</b> пока нет товаров.",
+                            "parse_mode": "HTML"
                         })
                         conn.close()
                         return {"ok": True}
@@ -271,7 +258,7 @@ async def telegram_webhook(request: Request):
                     })
 
                 elif callback_data.startswith("buy_"):
-                    prod_name = callback_data.replace("buy_", "")
+                    prod_name = callback_data.replace("buy_", "").strip()
                     cursor.execute("SELECT name, product_link, photo_link FROM products WHERE name = ?", (prod_name,))
                     product = cursor.fetchone()
 
@@ -799,7 +786,7 @@ async def add_city(city_name: str = Form(...)):
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         try:
-            cursor.execute("INSERT OR IGNORE INTO cities (name) VALUES (?)", (city_name,))
+            cursor.execute("INSERT OR IGNORE INTO cities (name) VALUES (?)", (city_name.strip(),))
             conn.commit()
             conn.close()
             return RedirectResponse(url="/cities?status=success", status_code=303)
@@ -885,7 +872,7 @@ async def add_district(city: str = Form(...), district_name: str = Form(...)):
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         try:
-            cursor.execute("INSERT OR IGNORE INTO districts (city, district) VALUES (?, ?)", (city, district_name))
+            cursor.execute("INSERT OR IGNORE INTO districts (city, district) VALUES (?, ?)", (city.strip(), district_name.strip()))
             conn.commit()
             conn.close()
             return RedirectResponse(url="/districts?status=success", status_code=303)
@@ -954,7 +941,7 @@ async def add_category(category_name: str = Form(...)):
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         try:
-            cursor.execute("INSERT OR IGNORE INTO categories (name) VALUES (?)", (category_name,))
+            cursor.execute("INSERT OR IGNORE INTO categories (name) VALUES (?)", (category_name.strip(),))
             conn.commit()
             conn.close()
             return RedirectResponse(url="/categories?status=success", status_code=303)
@@ -1044,7 +1031,7 @@ async def add_product(category: str = Form(...), city: str = Form(...), district
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         cursor.execute("INSERT INTO products (category, city, district, name, price, product_link, photo_link) VALUES (?, ?, ?, ?, ?, ?, ?)", 
-                       (category, city, district, product_name, price, product_link, photo_link))
+                       (category.strip(), city.strip(), district.strip(), product_name.strip(), price, product_link.strip(), photo_link.strip()))
         conn.commit()
         conn.close()
         return RedirectResponse(url="/products?status=success", status_code=303)
