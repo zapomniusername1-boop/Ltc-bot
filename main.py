@@ -9,7 +9,11 @@ import json
 
 app = FastAPI()
 
+# Данные для входа в твою админку Stella
+ADMIN_LOGIN = "admin"
+ADMIN_PASSWORD = "stella777"
 SECRET_PIN = "7777"
+
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stella.db")
 
 def init_db():
@@ -410,6 +414,7 @@ async def telegram_webhook(request: Request):
         
     return {"ok": True}
 
+# Космический дизайн Stella с анимацией перехода
 BASE_TEMPLATE = """<!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -433,12 +438,18 @@ BASE_TEMPLATE = """<!DOCTYPE html>
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
             background: var(--bg-color); background-image: var(--bg-gradient); color: var(--text-color); 
             display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 100vh; padding: 20px;
+            overflow-x: hidden; position: relative;
+        }
+        /* Космический фоновый эффект */
+        body::before {
+            content: ""; position: absolute; width: 100%; height: 100%; top: 0; left: 0;
+            background-image: radial-gradient(white 1px, transparent 0); background-size: 35px 35px; opacity: 0.12; z-index: -1;
         }
         .header-container { width: 100%; max-width: 420px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-        .header-title h1 { font-size: 16px; letter-spacing: 3px; font-weight: 600; color: #38bdf8; }
+        .header-title h1 { font-size: 16px; letter-spacing: 3px; font-weight: 600; color: #38bdf8; text-shadow: 0 0 10px rgba(56,189,248,0.4); }
         .header-title p { font-size: 10px; letter-spacing: 2px; color: var(--text-muted); }
         .menu-btn { background: var(--card-bg); border: 1px solid var(--border-color); color: var(--text-color); padding: 8px 10px; border-radius: 8px; cursor: pointer; font-size: 16px; }
-        .sidebar { position: fixed; top: 0; left: -280px; width: 280px; height: 100%; background: var(--card-bg); border-right: 1px solid var(--border-color); z-index: 1000; padding: 24px; transition: left 0.3s ease; display: flex; flex-direction: column; justify-content: space-between; }
+        .sidebar { position: fixed; top: 0; left: -280px; width: 280px; height: 100%; background: var(--card-bg); backdrop-filter: blur(20px); border-right: 1px solid var(--border-color); z-index: 1000; padding: 24px; transition: left 0.3s ease; display: flex; flex-direction: column; justify-content: space-between; }
         .sidebar.open { left: 0; }
         .sidebar-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
         .sidebar-menu a { display: block; color: var(--text-color); text-decoration: none; padding: 10px 0; border-bottom: 1px solid var(--input-border); font-size: 14px; }
@@ -448,17 +459,39 @@ BASE_TEMPLATE = """<!DOCTYPE html>
         .admin-info h4 { font-size: 13px; font-weight: 600; }
         .admin-info p { font-size: 11px; color: #38bdf8; }
         .admin-info span { font-size: 10px; color: var(--text-muted); }
-        .card { background: var(--card-bg); border: 1px solid var(--border-color); padding: 20px; border-radius: 20px; width: 100%; max-width: 420px; box-shadow: 0 0 30px rgba(14, 165, 233, 0.15); }
+        .card { background: var(--card-bg); backdrop-filter: blur(15px); border: 1px solid var(--border-color); padding: 20px; border-radius: 20px; width: 100%; max-width: 420px; box-shadow: 0 0 35px rgba(14, 165, 233, 0.2); }
         input, select, textarea { width: 100%; padding: 13px; margin-bottom: 12px; border-radius: 10px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-color); font-size: 14px; outline: none; }
-        button[type="submit"] { width: 100%; padding: 13px; margin-top: 4px; border-radius: 10px; border: none; background: #0284c7; color: #fff; font-size: 15px; font-weight: 600; cursor: pointer; }
+        input:focus { border-color: #38bdf8; box-shadow: 0 0 8px rgba(56,189,248,0.3); }
+        button[type="submit"] { width: 100%; padding: 13px; margin-top: 4px; border-radius: 10px; border: none; background: linear-gradient(135deg, #0284c7, #0369a1); color: #fff; font-size: 15px; font-weight: 600; cursor: pointer; box-shadow: 0 4px 15px rgba(2,132,199,0.4); transition: transform 0.2s; }
+        button[type="submit"]:active { transform: scale(0.98); }
         .logout { background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); margin-top: 12px; text-align: center; display: block; text-decoration: none; padding: 11px; border-radius: 10px; color: #fca5a5; font-weight: 600; font-size: 14px; }
+        
+        /* Анимация перехода STELLA */
+        #loader {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #070a13;
+            display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 9999;
+            transition: opacity 0.5s ease;
+        }
+        .spinner { width: 50px; height: 50px; border: 3px solid rgba(56,189,248,0.2); border-top: 3px solid #38bdf8; border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 15px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
+    <div id="loader">
+        <div class="spinner"></div>
+        <h2 style="color: #38bdf8; font-size: 14px; letter-spacing: 4px;">STELLA SYSTEM</h2>
+    </div>
+
     REPLACE_HEADER
     REPLACE_SIDEBAR
     <div class="card">REPLACE_CONTENT</div>
+
     <script>
+        window.addEventListener('load', () => {
+            const loader = document.getElementById('loader');
+            loader.style.opacity = '0';
+            setTimeout(() => loader.style.display = 'none', 500);
+        });
         function toggleSidebar() { document.getElementById('sidebar').classList.toggle('open'); }
     </script>
 </body>
@@ -515,19 +548,21 @@ def get_page(content: str, show_full_nav: bool = False) -> str:
 @app.get("/", response_class=HTMLResponse)
 async def index():
     content = """
-        <div style="text-align: center; margin-bottom: 12px;">
-            <h3 style="font-size: 15px; color: #38bdf8;">Вход в систему</h3>
+        <div style="text-align: center; margin-bottom: 16px;">
+            <h3 style="font-size: 15px; color: #38bdf8; letter-spacing: 1px;">Авторизация в системе</h3>
         </div>
-        <form method="POST" action="/verify-pin">
-            <input type="password" name="pin_code" placeholder="• • • • (7777)" maxlength="4" inputmode="numeric" style="text-align:center; font-size: 20px; letter-spacing: 8px;" required>
-            <button type="submit">Войти</button>
+        <form method="POST" action="/verify-auth">
+            <input type="text" name="login" placeholder="Логин (admin)" required>
+            <input type="password" name="password" placeholder="Пароль" required>
+            <input type="password" name="pin_code" placeholder="ПИН-код (7777)" maxlength="4" inputmode="numeric" style="text-align:center; font-size: 18px; letter-spacing: 6px;" required>
+            <button type="submit">Войти в систему</button>
         </form>
     """
     return get_page(content, show_full_nav=False)
 
-@app.post("/verify-pin", response_class=HTMLResponse)
-async def verify_pin(pin_code: str = Form(...)):
-    if pin_code != SECRET_PIN:
+@app.post("/verify-auth", response_class=HTMLResponse)
+async def verify_auth(login: str = Form(...), password: str = Form(...), pin_code: str = Form(...)):
+    if login != ADMIN_LOGIN or password != ADMIN_PASSWORD or pin_code != SECRET_PIN:
         return RedirectResponse(url="/", status_code=303)
     response = RedirectResponse(url="/dashboard", status_code=303)
     response.set_cookie(key="auth", value="true")
