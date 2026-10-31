@@ -21,7 +21,6 @@ BOT_MESSAGES = {
     "onetime": "Оплата прошла успешно! Вот ваш товар:"
 }
 
-# Обработка входящих запросов и кнопок от Telegram (Webhook)
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
     if not BOT_CONFIG["token"]:
@@ -33,7 +32,7 @@ async def telegram_webhook(request: Request):
     try:
         data = await request.json()
         
-        # 1. Если пользователь написал текстовое сообщение (например, /start)
+        # 1. Обработка текстовых команд
         if "message" in data:
             chat_id = data["message"]["chat"]["id"]
             text = data["message"].get("text", "")
@@ -43,11 +42,10 @@ async def telegram_webhook(request: Request):
                     async with httpx.AsyncClient() as client:
                         await client.post(f"{api_url}/sendMessage", json={
                             "chat_id": chat_id,
-                            "text": "В данный момент в боте нет доступных городов."
+                            "text": "В данный момент в боте нет доступных городов. Добавьте их в панели управления."
                         })
                     return {"ok": True}
 
-                # Формируем кнопки с городами
                 keyboard = {"inline_keyboard": [[{"text": f"🏙️ {city}", "callback_data": f"city_{city}"}]] for city in CITIES_DB}
                 
                 async with httpx.AsyncClient() as client:
@@ -57,19 +55,18 @@ async def telegram_webhook(request: Request):
                         "reply_markup": keyboard
                     })
 
-        # 2. Если пользователь нажал на инлайн-кнопку
+        # 2. Обработка нажатий на инлайн-кнопки
         elif "callback_query" in data:
             cq = data["callback_query"]
             chat_id = cq["message"]["chat"]["id"]
-            message_id = cq["message"]["message_id"]
             callback_data = cq["data"]
             query_id = cq["id"]
 
             async with httpx.AsyncClient() as client:
-                # Подтверждаем нажатие кнопки, чтобы убрать часики
+                # Обязательно гасим «часики» на кнопке
                 await client.post(f"{api_url}/answerCallbackQuery", json={"callback_query_id": query_id})
 
-                # Выбор города -> Показываем районы этого города
+                # Выбор города
                 if callback_data.startswith("city_"):
                     selected_city = callback_data.replace("city_", "")
                     filtered_districts = [d for d in DISTRICTS_DB if d["city"] == selected_city]
@@ -77,11 +74,12 @@ async def telegram_webhook(request: Request):
                     if not filtered_districts:
                         await client.post(f"{api_url}/sendMessage", json={
                             "chat_id": chat_id,
-                            "text": f"В городе {selected_city} пока нет районов."
+                            "text": f"В городе <b>{selected_city}</b> пока не добавлены районы. Перейдите в панель управления и добавьте их.",
+                            "parse_mode": "HTML"
                         })
                         return {"ok": True}
 
-                    keyboard = {"inline_keyboard": [[{"text": f"📍 {d['district']}", "callback_data": f"dist_{d['district']}"}]] for d in filtered_districts}
+                    keyboard = {"inline_keyboard": [[{"text": f"📍 {d['district']}", "callback_data": f"dist_{d['district']}"}]] for filtered_districts in [filtered_districts] for d in filtered_districts}
                     await client.post(f"{api_url}/sendMessage", json={
                         "chat_id": chat_id,
                         "text": f"Город: <b>{selected_city}</b>. Выберите район:",
@@ -89,14 +87,14 @@ async def telegram_webhook(request: Request):
                         "reply_markup": keyboard
                     })
 
-                # Выбор района -> Показываем категории
+                # Выбор района
                 elif callback_data.startswith("dist_"):
                     selected_district = callback_data.replace("dist_", "")
                     
                     if not CATEGORIES_DB:
                         await client.post(f"{api_url}/sendMessage", json={
                             "chat_id": chat_id,
-                            "text": "В данный момент категории не настроены."
+                            "text": "В данный момент категории товаров не настроены."
                         })
                         return {"ok": True}
 
@@ -108,7 +106,7 @@ async def telegram_webhook(request: Request):
                         "reply_markup": keyboard
                     })
 
-                # Выбор категории -> Показываем товары в этом районе и категории
+                # Выбор категории
                 elif callback_data.startswith("cat_"):
                     parts = callback_data.replace("cat_", "").split("_", 1)
                     selected_district = parts[0]
@@ -131,7 +129,7 @@ async def telegram_webhook(request: Request):
                         "reply_markup": keyboard
                     })
 
-                # Покупка/Выдача товара
+                # Покупка / выдача товара
                 elif callback_data.startswith("buy_"):
                     prod_name = callback_data.replace("buy_", "")
                     product = next((p for p in PRODUCTS_DB if p["name"] == prod_name), None)
@@ -141,7 +139,6 @@ async def telegram_webhook(request: Request):
                         if product['product_link']:
                             delivery_text += f"🔗 Ссылка: {product['product_link']}"
 
-                        # Отправляем текст или фото
                         if product['photo_link']:
                             await client.post(f"{api_url}/sendPhoto", json={
                                 "chat_id": chat_id,
