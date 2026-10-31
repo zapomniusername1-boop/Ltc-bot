@@ -18,7 +18,6 @@ def init_db():
     cursor.execute("CREATE TABLE IF NOT EXISTS cities (name TEXT PRIMARY KEY)")
     cursor.execute("CREATE TABLE IF NOT EXISTS districts (city TEXT, district TEXT PRIMARY KEY, items INTEGER DEFAULT 0, usd REAL DEFAULT 0, ltc REAL DEFAULT 0)")
     cursor.execute("CREATE TABLE IF NOT EXISTS categories (name TEXT PRIMARY KEY)")
-    # Добавили колонку stock (количество штук) в таблицу товаров
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS products (
             id INTEGER PRIMARY KEY AUTOINCREMENT, 
@@ -203,11 +202,7 @@ async def telegram_webhook(request: Request):
                             ]
                         }
                         try:
-                            await client.post(f"{api_url}/editMessageReplyMarkup", json={
-                                "chat_id": chat_id,
-                                "message_id": message_id,
-                                "reply_markup": {"inline_keyboard": []}
-                            })
+                            await client.post(f"{api_url}/deleteMessage", json={"chat_id": chat_id, "message_id": message_id})
                         except Exception:
                             pass
 
@@ -224,10 +219,6 @@ async def telegram_webhook(request: Request):
                     
                     if not v_row or v_row[0] == 0:
                         conn.close()
-                        await client.post(f"{api_url}/sendMessage", json={
-                            "chat_id": chat_id,
-                            "text": "⚠️ Сначала отправьте /start для прохождения проверки."
-                        })
                         return
 
                     if callback_data == "open_catalog":
@@ -235,16 +226,18 @@ async def telegram_webhook(request: Request):
                         cities = [row[0] for row in cursor.fetchall()]
                         conn.close()
                         if not cities:
-                            await client.post(f"{api_url}/sendMessage", json={
-                                "chat_id": chat_id,
-                                "text": "В данный момент в боте нет доступных городов."
+                            await client.post(f"{api_url}/editMessageText", json={
+                                "chat_id": chat_id, "message_id": message_id,
+                                "text": "В данный момент в боте нет доступных городов.",
+                                "reply_markup": {"inline_keyboard": [[{"text": "🔙 Назад", "callback_data": "main_menu"}]]}
                             })
                             return
                         keyboard = {"inline_keyboard": [[{"text": f"🏙️ {city}", "callback_data": f"city_{city}"}]] for city in cities}
-                        await client.post(f"{api_url}/sendMessage", json={
-                            "chat_id": chat_id,
-                            "text": "Выберите город для покупки:",
-                            "reply_markup": keyboard
+                        keyboard["inline_keyboard"].append([{"text": "🔙 Назад", "callback_data": "main_menu"}])
+                        await client.post(f"{api_url}/editMessageText", json={
+                            "chat_id": chat_id, "message_id": message_id,
+                            "text": "🏙️ <b>Выберите город для покупки:</b>",
+                            "parse_mode": "HTML", "reply_markup": keyboard
                         })
 
                     elif callback_data == "user_profile":
@@ -266,29 +259,17 @@ async def telegram_webhook(request: Request):
                             f"🆔 <b>ID:</b> <code>{chat_id}</code>\n"
                             f"💵 <b>Баланс USD:</b> ${user_info[0]:.2f}\n"
                             f"🪙 <b>Баланс LTC:</b> {user_info[1]:.4f} LTC\n\n"
-                            f"📊 <b>ЦИФРЫ ПОКУПОК:</b>\n"
-                            f"• Всего куплено: <b>{total_count} шт.</b>\n"
-                            f"• Потрачено: <b>${total_spent:.2f}</b>\n\n"
-                            f"📜 <b>Последние покупки:</b>\n"
+                            f"📊 <b>КУПЛЕНО ТОВАРОВ:</b> {total_count} шт. (на ${total_spent:.2f})\n"
                         )
-
-                        if user_purchases:
-                            for p in user_purchases:
-                                profile_text += f"— {p[0]} (${p[1]}) | Район: {p[2]} | <i>{p[3]}</i>\n"
-                        else:
-                            profile_text += "<i>У вас пока нет покупок.</i>"
-
                         keyboard = {
                             "inline_keyboard": [
-                                [{"text": "🔄 Обновить", "callback_data": "user_profile"},
-                                 {"text": "🔙 Главное меню", "callback_data": "main_menu"}]
+                                [{"text": "🔄 Обновить", "callback_data": "user_profile"}],
+                                [{"text": "🔙 Главное меню", "callback_data": "main_menu"}]
                             ]
                         }
-                        await client.post(f"{api_url}/sendMessage", json={
-                            "chat_id": chat_id,
-                            "text": profile_text,
-                            "parse_mode": "HTML",
-                            "reply_markup": keyboard
+                        await client.post(f"{api_url}/editMessageText", json={
+                            "chat_id": chat_id, "message_id": message_id,
+                            "text": profile_text, "parse_mode": "HTML", "reply_markup": keyboard
                         })
 
                     elif callback_data == "top_up_ltc":
@@ -297,23 +278,16 @@ async def telegram_webhook(request: Request):
                         conn.close()
                         ltc_addr = row[0] if row else "Адрес не найден"
 
-                        topup_text = (
-                            f"💰 <b>ПОПОЛНЕНИЕ БАЛАНСА LTC</b>\n\n"
-                            f"Отправьте Litecoin (LTC) на ваш адрес:\n\n"
-                            f"<code>{ltc_addr}</code>"
-                        )
-                        keyboard = {
-                            "inline_keyboard": [[{"text": "🔙 Назад", "callback_data": "user_profile"}]]
-                        }
-                        await client.post(f"{api_url}/sendMessage", json={
-                            "chat_id": chat_id,
-                            "text": topup_text,
-                            "parse_mode": "HTML",
-                            "reply_markup": keyboard
+                        topup_text = f"💰 <b>ПОПОЛНЕНИЕ БАЛАНСА LTC</b>\n\nОтправьте Litecoin на адрес:\n<code>{ltc_addr}</code>"
+                        keyboard = {"inline_keyboard": [[{"text": "🔙 Назад", "callback_data": "user_profile"}]]}
+                        await client.post(f"{api_url}/editMessageText", json={
+                            "chat_id": chat_id, "message_id": message_id,
+                            "text": topup_text, "parse_mode": "HTML", "reply_markup": keyboard
                         })
 
                     elif callback_data == "main_menu":
                         conn.close()
+                        welcome_msg = get_config("welcome_msg")
                         keyboard = {
                             "inline_keyboard": [
                                 [{"text": "🏙️ Открыть каталог", "callback_data": "open_catalog"}],
@@ -321,10 +295,10 @@ async def telegram_webhook(request: Request):
                                  {"text": "💰 Пополнить LTC", "callback_data": "top_up_ltc"}]
                             ]
                         }
-                        await client.post(f"{api_url}/sendMessage", json={
-                            "chat_id": chat_id,
-                            "text": "🏠 Главное меню:",
-                            "reply_markup": keyboard
+                        await client.post(f"{api_url}/editMessageText", json={
+                            "chat_id": chat_id, "message_id": message_id,
+                            "text": f"🏠 <b>Главное меню:</b>\n\n{welcome_msg}",
+                            "parse_mode": "HTML", "reply_markup": keyboard
                         })
 
                     elif callback_data.startswith("city_"):
@@ -334,19 +308,21 @@ async def telegram_webhook(request: Request):
                         conn.close()
 
                         if not districts:
-                            await client.post(f"{api_url}/sendMessage", json={
-                                "chat_id": chat_id,
+                            keyboard = {"inline_keyboard": [[{"text": "🔙 К городам", "callback_data": "open_catalog"}]]}
+                            await client.post(f"{api_url}/editMessageText", json={
+                                "chat_id": chat_id, "message_id": message_id,
                                 "text": f"⚠️ В городе <b>{selected_city}</b> пока нет районов.",
-                                "parse_mode": "HTML"
+                                "parse_mode": "HTML", "reply_markup": keyboard
                             })
                             return
 
                         keyboard = {"inline_keyboard": [[{"text": f"📍 {d}", "callback_data": f"dist_{d}"}]] for d in districts}
-                        await client.post(f"{api_url}/sendMessage", json={
-                            "chat_id": chat_id,
-                            "text": f"Город: <b>{selected_city}</b>. Выберите район:",
-                            "parse_mode": "HTML",
-                            "reply_markup": keyboard
+                        keyboard["inline_keyboard"].append([{"text": "🔙 К городам", "callback_data": "open_catalog"}])
+                        
+                        await client.post(f"{api_url}/editMessageText", json={
+                            "chat_id": chat_id, "message_id": message_id,
+                            "text": f"🏙️ Город: <b>{selected_city}</b>\nВыберите район:",
+                            "parse_mode": "HTML", "reply_markup": keyboard
                         })
 
                     elif callback_data.startswith("dist_"):
@@ -356,18 +332,20 @@ async def telegram_webhook(request: Request):
                         conn.close()
                         
                         if not categories:
-                            await client.post(f"{api_url}/sendMessage", json={
-                                "chat_id": chat_id,
-                                "text": f"⚠️ Категории не настроены."
+                            keyboard = {"inline_keyboard": [[{"text": "🔙 Назад", "callback_data": "open_catalog"}]]}
+                            await client.post(f"{api_url}/editMessageText", json={
+                                "chat_id": chat_id, "message_id": message_id,
+                                "text": "⚠️ Категории не настроены.", "reply_markup": keyboard
                             })
                             return
 
                         keyboard = {"inline_keyboard": [[{"text": f"📂 {cat}", "callback_data": f"cat_{selected_district}_{cat}"}]] for cat in categories}
-                        await client.post(f"{api_url}/sendMessage", json={
-                            "chat_id": chat_id,
-                            "text": f"Район: <b>{selected_district}</b>. Выберите категорию:",
-                            "parse_mode": "HTML",
-                            "reply_markup": keyboard
+                        keyboard["inline_keyboard"].append([{"text": "🔙 Назад", "callback_data": "open_catalog"}])
+
+                        await client.post(f"{api_url}/editMessageText", json={
+                            "chat_id": chat_id, "message_id": message_id,
+                            "text": f"📍 Район: <b>{selected_district}</b>\nВыберите категорию:",
+                            "parse_mode": "HTML", "reply_markup": keyboard
                         })
 
                     elif callback_data.startswith("cat_"):
@@ -379,48 +357,45 @@ async def telegram_webhook(request: Request):
                         selected_district = parts[0]
                         selected_cat = parts[1]
 
-                        # Показываем только те товары, у которых stock > 0
                         cursor.execute("SELECT name, price, stock FROM products WHERE district = ? AND category = ? AND stock > 0", (selected_district, selected_cat))
                         products = cursor.fetchall()
                         conn.close()
 
                         if not products:
-                            await client.post(f"{api_url}/sendMessage", json={
-                                "chat_id": chat_id,
-                                "text": f"📦 В этой категории пока нет товаров в наличии.",
-                                "parse_mode": "HTML"
+                            keyboard = {"inline_keyboard": [[{"text": "🔙 Назад", "callback_data": f"dist_{selected_district}"}]]}
+                            await client.post(f"{api_url}/editMessageText", json={
+                                "chat_id": chat_id, "message_id": message_id,
+                                "text": f"📦 В категории <b>{selected_cat}</b> нет товаров в наличии.",
+                                "parse_mode": "HTML", "reply_markup": keyboard
                             })
                             return
 
                         keyboard = {"inline_keyboard": [[{"text": f"📦 {p[0]} — ${p[1]} (Остаток: {p[2]} шт.)", "callback_data": f"buy_{p[0]}"}]] for p in products}
-                        await client.post(f"{api_url}/sendMessage", json={
-                            "chat_id": chat_id,
-                            "text": f"Категория: <b>{selected_cat}</b>. Выберите товар:",
-                            "parse_mode": "HTML",
-                            "reply_markup": keyboard
+                        keyboard["inline_keyboard"].append([{"text": "🔙 Назад", "callback_data": f"dist_{selected_district}"}])
+
+                        await client.post(f"{api_url}/editMessageText", json={
+                            "chat_id": chat_id, "message_id": message_id,
+                            "text": f"📂 Категория: <b>{selected_cat}</b>\nВыберите товар:",
+                            "parse_mode": "HTML", "reply_markup": keyboard
                         })
 
                     elif callback_data.startswith("buy_"):
                         prod_name = callback_data.replace("buy_", "").strip()
                         
-                        # Находим товар по имени
                         cursor.execute("SELECT id, name, price, product_link, photo_link, district, stock FROM products WHERE name = ?", (prod_name,))
                         product = cursor.fetchone()
 
                         if product:
                             prod_id, p_name, p_price, p_link, p_photo, p_dist, p_stock = product
                             
-                            # Записываем покупку
                             cursor.execute("INSERT INTO purchases (user_id, product_name, price, district) VALUES (?, ?, ?, ?)", 
                                            (chat_id, p_name, p_price, p_dist))
                             cursor.execute("UPDATE districts SET items = items + 1 WHERE district = ?", (p_dist,))
                             
-                            # Уменьшаем количество товара на складе (stock)
                             new_stock = p_stock - 1
                             if new_stock > 0:
                                 cursor.execute("UPDATE products SET stock = ? WHERE id = ?", (new_stock, prod_id))
                             else:
-                                # Если товар закончился — удаляем его полностью из базы
                                 cursor.execute("DELETE FROM products WHERE id = ?", (prod_id,))
                                 
                             conn.commit()
@@ -428,28 +403,29 @@ async def telegram_webhook(request: Request):
 
                         if product:
                             onetime_msg = get_config("onetime_msg")
-                            delivery_text = f"{onetime_msg}\n\n<b>{product[1]}</b>\nЦена: ${product[2]}\n"
+                            delivery_text = f"✅ <b>{onetime_msg}</b>\n\n<b>{product[1]}</b>\nЦена: ${product[2]}\n"
                             if product[3]:
-                                delivery_text += f"🔗 Ссылка: {product[3]}"
+                                delivery_text += f"🔗 <b>Ссылка:</b> {product[3]}"
+
+                            keyboard = {"inline_keyboard": [[{"text": "🏙️ В каталог", "callback_data": "open_catalog"}, {"text": "👤 Профиль", "callback_data": "user_profile"}]]}
+
+                            try:
+                                await client.post(f"{api_url}/deleteMessage", json={"chat_id": chat_id, "message_id": message_id})
+                            except Exception:
+                                pass
 
                             if product[4]:
                                 await client.post(f"{api_url}/sendPhoto", json={
-                                    "chat_id": chat_id,
-                                    "photo": product[4],
-                                    "caption": delivery_text,
-                                    "parse_mode": "HTML"
+                                    "chat_id": chat_id, "photo": product[4],
+                                    "caption": delivery_text, "parse_mode": "HTML", "reply_markup": keyboard
                                 })
                             else:
                                 await client.post(f"{api_url}/sendMessage", json={
-                                    "chat_id": chat_id,
-                                    "text": delivery_text,
-                                    "parse_mode": "HTML"
+                                    "chat_id": chat_id, "text": delivery_text,
+                                    "parse_mode": "HTML", "reply_markup": keyboard
                                 })
                         else:
-                            await client.post(f"{api_url}/sendMessage", json={
-                                "chat_id": chat_id,
-                                "text": "⚠️ Извините, этот товар только что закончился!"
-                            })
+                            await client.post(f"{api_url}/answerCallbackQuery", json={"callback_query_id": query_id, "text": "⚠️ Товар закончился!", "show_alert": True})
 
     except Exception as e:
         print(f"Webhook error: {e}")
@@ -513,13 +489,34 @@ BASE_TEMPLATE = """<!DOCTYPE html>
         .admin-info p { font-size: 11px; color: #38bdf8; }
         .admin-info span { font-size: 10px; color: var(--text-muted); }
         
-        .card { background: var(--card-bg); backdrop-filter: blur(15px); border: 1px solid var(--border-color); padding: 20px; border-radius: 20px; width: 100%; max-width: 420px; box-shadow: 0 0 35px rgba(14, 165, 233, 0.2); }
+        .card { background: var(--card-bg); backdrop-filter: blur(15px); border: 1px solid var(--border-color); padding: 20px; border-radius: 20px; width: 100%; max-width: 420px; box-shadow: 0 0 35px rgba(14, 165, 233, 0.2); position: relative; }
         input, select, textarea { width: 100%; padding: 13px; margin-bottom: 12px; border-radius: 10px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-color); font-size: 14px; outline: none; }
         input:focus { border-color: #38bdf8; box-shadow: 0 0 8px rgba(56,189,248,0.3); }
         button[type="submit"] { width: 100%; padding: 13px; margin-top: 4px; border-radius: 10px; border: none; background: linear-gradient(135deg, #0284c7, #0369a1); color: #fff; font-size: 15px; font-weight: 600; cursor: pointer; box-shadow: 0 4px 15px rgba(2,132,199,0.4); transition: transform 0.2s; }
         button[type="submit"]:active { transform: scale(0.98); }
         .logout { background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); margin-top: 12px; text-align: center; display: block; text-decoration: none; padding: 11px; border-radius: 10px; color: #fca5a5; font-weight: 600; font-size: 14px; }
         
+        /* Стили для шестерёнки и выпадающего меню категорий */
+        .gear-container { position: absolute; top: 20px; right: 20px; }
+        .gear-btn { background: var(--input-bg); border: 1px solid var(--border-color); color: #38bdf8; width: 36px; height: 36px; border-radius: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 16px; transition: transform 0.3s; }
+        .gear-btn:hover { transform: rotate(90deg); }
+        .dropdown-menu { display: none; position: absolute; right: 0; top: 44px; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 12px; width: 180px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); z-index: 50; overflow: hidden; backdrop-filter: blur(10px); }
+        .dropdown-menu a, .dropdown-menu button { display: block; width: 100%; padding: 10px 14px; text-align: left; background: none; border: none; color: var(--text-color); font-size: 13px; cursor: pointer; text-decoration: none; }
+        .dropdown-menu a:hover, .dropdown-menu button:hover { background: rgba(56, 189, 248, 0.1); color: #38bdf8; }
+        .dropdown-menu .delete-opt { color: #fca5a5; }
+        .dropdown-menu .delete-opt:hover { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+
+        /* Модальные окна */
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); backdrop-filter: blur(5px); justify-content: center; align-items: center; z-index: 1000; padding: 20px; }
+        .modal-content { background: var(--card-bg); border: 1px solid var(--border-color); padding: 20px; border-radius: 16px; width: 100%; max-width: 360px; box-shadow: 0 0 30px rgba(56,189,248,0.2); }
+
+        /* Голографическая вращающаяся галочка подтверждения */
+        #holoOverlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(7, 10, 19, 0.85); z-index: 9999; justify-content: center; align-items: center; flex-direction: column; }
+        .holo-spinner { width: 70px; height: 70px; border: 3px solid rgba(56,189,248,0.2); border-top: 3px solid #38bdf8; border-radius: 50%; animation: spinHolo 0.8s linear infinite; box-shadow: 0 0 20px rgba(56,189,248,0.5); position: relative; display: flex; justify-content: center; align-items: center; }
+        .holo-spinner::after { content: "✓"; font-size: 32px; color: #38bdf8; text-shadow: 0 0 10px #38bdf8; animation: pulseCheck 0.8s ease infinite alternate; }
+        @keyframes spinHolo { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        @keyframes pulseCheck { 0% { opacity: 0.4; } 100% { opacity: 1; } }
+
         #loader {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg-color);
             display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 9999;
@@ -533,6 +530,12 @@ BASE_TEMPLATE = """<!DOCTYPE html>
     <div id="loader">
         <div class="spinner"></div>
         <h2 style="color: #38bdf8; font-size: 14px; letter-spacing: 4px;">STELLA SYSTEM</h2>
+    </div>
+
+    <!-- Голографический лоадер удаления -->
+    <div id="holoOverlay">
+        <div class="holo-spinner"></div>
+        <p style="color: #38bdf8; margin-top: 15px; font-size: 13px; letter-spacing: 2px;">ДЕЙСТВИЕ ВЫПОЛНЕНО</p>
     </div>
 
     REPLACE_HEADER
@@ -556,6 +559,26 @@ BASE_TEMPLATE = """<!DOCTYPE html>
             setTimeout(() => loader.style.display = 'none', 500);
         });
         function toggleSidebar() { document.getElementById('sidebar').classList.toggle('open'); }
+        function toggleDropdown() {
+            const menu = document.getElementById('gearDropdown');
+            menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
+        }
+        window.onclick = function(event) {
+            if (!event.target.matches('.gear-btn') && !event.target.closest('.gear-btn')) {
+                const dropdowns = document.getElementsByClassName("dropdown-menu");
+                for (let i = 0; i < dropdowns.length; i++) {
+                    dropdowns[i].style.display = "none";
+                }
+            }
+        }
+        function openModal(id) { document.getElementById(id).style.display = 'flex'; document.getElementById('gearDropdown').style.display = 'none'; }
+        function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+        
+        function showHolo(form) {
+            document.getElementById('holoOverlay').style.display = 'flex';
+            setTimeout(() => { form.submit(); }, 700);
+            return false;
+        }
     </script>
 </body>
 </html>"""
@@ -906,15 +929,22 @@ async def cities_page(request: Request):
     cursor.execute("SELECT name FROM cities")
     cities = [row[0] for row in cursor.fetchall()]
     conn.close()
-    list_html = "".join([f'<div>🏙️ {c}</div>' for c in cities]) or 'Нет городов'
+    
+    list_html = "".join([f'''
+        <div style="display: flex; justify-content: space-between; align-items: center; background: var(--input-bg); padding: 8px 12px; border-radius: 8px; margin-bottom: 6px; border: 1px solid var(--input-border);">
+            <span>🏙️ {c}</span>
+            <a href="/delete-city?name={c}" style="color: #fca5a5; font-size: 12px; text-decoration: none; background: rgba(239,68,68,0.1); padding: 4px 8px; border-radius: 6px;">🗑️ Удалить</a>
+        </div>
+    ''' for c in cities]) or '<p style="font-size: 11px; color: var(--text-muted); text-align: center;">Нет городов</p>'
+
     content = f"""
         <h2>Города</h2>
         <form method="POST" action="/add-city">
             <input type="text" name="city_name" placeholder="Название города" required>
-            <button type="submit">Добавить</button>
+            <button type="submit">Добавить город</button>
         </form>
-        <div>{list_html}</div>
-        <a href='/dashboard' class='logout' style='background: #0284c7; color: #fff; border: none; text-decoration: none;'>Назад</a>
+        <div style="margin-top: 15px; max-height: 250px; overflow-y: auto;">{list_html}</div>
+        <a href='/dashboard' class='logout' style='background: #0284c7; color: #fff; border: none; text-decoration: none;'>Назад в дашборд</a>
     """
     return get_page(content, show_full_nav=True)
 
@@ -926,6 +956,19 @@ async def add_city(request: Request, city_name: str = Form(...)):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("INSERT OR IGNORE INTO cities (name) VALUES (?)", (city_name.strip(),))
+    conn.commit()
+    conn.close()
+    return RedirectResponse(url="/cities", status_code=303)
+
+@app.get("/delete-city", response_class=HTMLResponse)
+async def delete_city(request: Request, name: str):
+    if request.cookies.get("auth") != "true":
+        return RedirectResponse(url="/", status_code=303)
+
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM cities WHERE name = ?", (name,))
+    cursor.execute("DELETE FROM districts WHERE city = ?", (name,))
     conn.commit()
     conn.close()
     return RedirectResponse(url="/cities", status_code=303)
@@ -942,17 +985,24 @@ async def districts_page(request: Request):
     cursor.execute("SELECT city, district FROM districts")
     districts = cursor.fetchall()
     conn.close()
+    
     city_options = "".join([f'<option value="{c}">{c}</option>' for c in cities])
-    list_html = "".join([f'<div>📍 {d[1]} ({d[0]})</div>' for d in districts]) or 'Нет районов'
+    list_html = "".join([f'''
+        <div style="display: flex; justify-content: space-between; align-items: center; background: var(--input-bg); padding: 8px 12px; border-radius: 8px; margin-bottom: 6px; border: 1px solid var(--input-border);">
+            <span>📍 {d[1]} ({d[0]})</span>
+            <a href="/delete-district?district={d[1]}" style="color: #fca5a5; font-size: 12px; text-decoration: none; background: rgba(239,68,68,0.1); padding: 4px 8px; border-radius: 6px;">🗑️ Удалить</a>
+        </div>
+    ''' for d in districts]) or '<p style="font-size: 11px; color: var(--text-muted); text-align: center;">Нет районов</p>'
+
     content = f"""
         <h2>Районы</h2>
         <form method="POST" action="/add-district">
             <select name="city" required><option value="" disabled selected>Город</option>{city_options}</select>
             <input type="text" name="district_name" placeholder="Название района" required>
-            <button type="submit">Добавить</button>
+            <button type="submit">Добавить район</button>
         </form>
-        <div>{list_html}</div>
-        <a href='/dashboard' class='logout' style='background: #0284c7; color: #fff; border: none; text-decoration: none;'>Назад</a>
+        <div style="margin-top: 15px; max-height: 250px; overflow-y: auto;">{list_html}</div>
+        <a href='/dashboard' class='logout' style='background: #0284c7; color: #fff; border: none; text-decoration: none;'>Назад в дашборд</a>
     """
     return get_page(content, show_full_nav=True)
 
@@ -968,6 +1018,19 @@ async def add_district(request: Request, city: str = Form(...), district_name: s
     conn.close()
     return RedirectResponse(url="/districts", status_code=303)
 
+@app.get("/delete-district", response_class=HTMLResponse)
+async def delete_district(request: Request, district: str):
+    if request.cookies.get("auth") != "true":
+        return RedirectResponse(url="/", status_code=303)
+
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM districts WHERE district = ?", (district,))
+    conn.commit()
+    conn.close()
+    return RedirectResponse(url="/districts", status_code=303)
+
+# ==================== УПРАВЛЕНИЕ КАТЕГОРИЯМИ С ШЕСТЕРЁНКОЙ И АНИМАЦИЕЙ ====================
 @app.get("/categories", response_class=HTMLResponse)
 async def categories_page(request: Request):
     if request.cookies.get("auth") != "true":
@@ -978,15 +1041,51 @@ async def categories_page(request: Request):
     cursor.execute("SELECT name FROM categories")
     categories = [row[0] for row in cursor.fetchall()]
     conn.close()
-    list_html = "".join([f'<div>📂 {c}</div>' for c in categories]) or 'Нет категорий'
+
+    list_html = "".join([f'<div style="background: var(--input-bg); padding: 10px 14px; border-radius: 8px; margin-bottom: 6px; border: 1px solid var(--input-border); font-size: 14px;">📂 {c}</div>' for c in categories]) or '<p style="font-size: 12px; color: var(--text-muted); text-align: center; padding: 20px;">Список категорий пуст</p>'
+
+    delete_options = "".join([f'<option value="{c}">{c}</option>' for c in categories])
+
     content = f"""
-        <h2>Категории</h2>
-        <form method="POST" action="/add-category">
-            <input type="text" name="category_name" placeholder="Название категории" required>
-            <button type="submit">Добавить</button>
-        </form>
-        <div>{list_html}</div>
-        <a href='/dashboard' class='logout' style='background: #0284c7; color: #fff; border: none; text-decoration: none;'>Назад</a>
+        <!-- Кнопка-шестерёнка в правом верхнем углу карточки -->
+        <div class="gear-container">
+            <button class="gear-btn" onclick="toggleDropdown()" title="Настройки">⚙️</button>
+            <div id="gearDropdown" class="dropdown-menu">
+                <button onclick="openModal('addModal')">➕ Добавить категорию</button>
+                <button class="delete-opt" onclick="openModal('deleteModal')">🗑️ Удалить категорию</button>
+            </div>
+        </div>
+
+        <h2 style="margin-bottom: 15px;">Категории</h2>
+        <div style="max-height: 300px; overflow-y: auto; margin-bottom: 15px;">{list_html}</div>
+        <a href='/dashboard' class='logout' style='background: #0284c7; color: #fff; border: none; text-decoration: none;'>← В дашборд</a>
+
+        <!-- Модалка: Добавление категории -->
+        <div id="addModal" class="modal">
+            <div class="modal-content">
+                <h3 style="color: #38bdf8; font-size: 15px; margin-bottom: 12px;">Добавить категорию</h3>
+                <form method="POST" action="/add-category" onsubmit="return showHolo(this)">
+                    <input type="text" name="category_name" placeholder="Название категории" required>
+                    <button type="submit">Сохранить</button>
+                </form>
+                <button type="button" onclick="closeModal('addModal')" style="width: 100%; margin-top: 8px; background: transparent; border: 1px solid var(--border-color); color: var(--text-muted); padding: 10px; border-radius: 10px; cursor: pointer;">Отмена</button>
+            </div>
+        </div>
+
+        <!-- Модалка: Удаление категории -->
+        <div id="deleteModal" class="modal">
+            <div class="modal-content">
+                <h3 style="color: #ef4444; font-size: 15px; margin-bottom: 12px;">Удалить категорию</h3>
+                <form method="POST" action="/delete-category" onsubmit="return showHolo(this)">
+                    <select name="category_name" required style="border-color: rgba(239, 68, 68, 0.4);">
+                        <option value="" disabled selected>Выберите категорию</option>
+                        {delete_options}
+                    </select>
+                    <button type="submit" style="background: linear-gradient(135deg, #ef4444, #dc2626); box-shadow: 0 4px 15px rgba(239,68,68,0.4);">Удалить</button>
+                </form>
+                <button type="button" onclick="closeModal('deleteModal')" style="width: 100%; margin-top: 8px; background: transparent; border: 1px solid var(--border-color); color: var(--text-muted); padding: 10px; border-radius: 10px; cursor: pointer;">Отмена</button>
+            </div>
+        </div>
     """
     return get_page(content, show_full_nav=True)
 
@@ -998,6 +1097,18 @@ async def add_category(request: Request, category_name: str = Form(...)):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("INSERT OR IGNORE INTO categories (name) VALUES (?)", (category_name.strip(),))
+    conn.commit()
+    conn.close()
+    return RedirectResponse(url="/categories", status_code=303)
+
+@app.post("/delete-category", response_class=HTMLResponse)
+async def delete_category(request: Request, category_name: str = Form(...)):
+    if request.cookies.get("auth") != "true":
+        return RedirectResponse(url="/", status_code=303)
+
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM categories WHERE name = ?", (category_name.strip(),))
     conn.commit()
     conn.close()
     return RedirectResponse(url="/categories", status_code=303)
@@ -1015,7 +1126,6 @@ async def products_page(request: Request):
     cities = [row[0] for row in cursor.fetchall()]
     cursor.execute("SELECT district, city FROM districts")
     districts = cursor.fetchall()
-    # Выводим товары вместе с их остатком (stock)
     cursor.execute("SELECT name, price, district, stock FROM products")
     products = cursor.fetchall()
     conn.close()
