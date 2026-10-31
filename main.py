@@ -183,22 +183,19 @@ async def telegram_webhook(request: Request):
 
                 if callback_data.startswith("city_"):
                     selected_city = callback_data.replace("city_", "")
-                    
-                    # Ищем районы, привязанные строго к этому городу
                     cursor.execute("SELECT district FROM districts WHERE city = ?", (selected_city,))
                     districts = [row[0] for row in cursor.fetchall()]
 
                     if not districts:
-                        # Отладочное сообщение: покажет в боте, почему не пошло дальше
                         await client.post(f"{api_url}/sendMessage", json={
                             "chat_id": chat_id,
-                            "text": f"⚠️ Ошибка: Для города <b>{selected_city}</b> в базе не найдено ни одного района! Зайдите в админку в «Управление районами» и заново добавьте район, выбрав город '{selected_city}'.",
+                            "text": f"⚠️ В городе <b>{selected_city}</b> пока нет добавленных районов. Добавьте их в панели управления!",
                             "parse_mode": "HTML"
                         })
                         conn.close()
                         return {"ok": True}
 
-                    keyboard = {"inline_keyboard": [[{"text": f"📍 {d}", "callback_data": f"dist_{d}"}]] for districts_list in [districts] for d in districts_list}
+                    keyboard = {"inline_keyboard": [[{"text": f"📍 {d}", "callback_data": f"dist_{d}"}]] for d in districts}
                     await client.post(f"{api_url}/sendMessage", json={
                         "chat_id": chat_id,
                         "text": f"Город: <b>{selected_city}</b>. Выберите район:",
@@ -214,7 +211,7 @@ async def telegram_webhook(request: Request):
                     if not categories:
                         await client.post(f"{api_url}/sendMessage", json={
                             "chat_id": chat_id,
-                            "text": "⚠️ В панели управления не добавлены категории товаров."
+                            "text": "⚠️ Категории товаров не настроены."
                         })
                         conn.close()
                         return {"ok": True}
@@ -238,8 +235,7 @@ async def telegram_webhook(request: Request):
                     if not products:
                         await client.post(f"{api_url}/sendMessage", json={
                             "chat_id": chat_id,
-                            "text": f"📦 В этой категории для района <b>{selected_district}</b> пока нет товаров.",
-                            "parse_mode": "HTML"
+                            "text": f"📦 В этой категории пока нет товаров."
                         })
                         conn.close()
                         return {"ok": True}
@@ -727,6 +723,7 @@ async def update_bot_messages(welcome_msg: str = Form(...), onetime_msg: str = F
         return RedirectResponse(url="/bot-messages?status=success", status_code=303)
     return RedirectResponse(url="/bot-messages?status=error", status_code=303)
 
+# --- УПРАВЛЕНИЕ ГОРОДАМИ (С УДАЛЕНИЕМ) ---
 @app.get("/cities", response_class=HTMLResponse)
 async def cities_page(status: str = None):
     conn = sqlite3.connect(DB_PATH)
@@ -736,14 +733,18 @@ async def cities_page(status: str = None):
     conn.close()
 
     list_html = "".join([f"""
-        <div style="display: flex; justify-content: space-between; align-items: center; background: var(--input-bg); padding: 10px 12px; border-radius: 8px; margin-bottom: 8px; border: 1px solid var(--input-border);">
+        <div style="display: flex; justify-content: space-between; align-items: center; background: var(--input-bg); padding: 8px 12px; border-radius: 8px; margin-bottom: 8px; border: 1px solid var(--input-border);">
             <span style="font-size: 13px; font-weight: 600;">🏙️ {c}</span>
+            <form method="POST" action="/delete-city" style="margin:0;">
+                <input type="hidden" name="city_name" value="{c}">
+                <button type="submit" style="padding: 4px 8px; font-size: 11px; background: rgba(239, 68, 68, 0.2); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 6px; width: auto; margin: 0;">Удалить</button>
+            </form>
         </div>
     """ for c in cities]) if cities else '<p style="font-size: 11px; color: var(--text-muted); text-align: center;">Города еще не добавлены</p>'
 
     popup_script = ""
     if status == "success":
-        popup_script = "<script>window.addEventListener('load', () => showPopup(true, 'Изменено'));</script>"
+        popup_script = "<script>window.addEventListener('load', () => showPopup(true, 'Успешно'));</script>"
     elif status == "error":
         popup_script = "<script>window.addEventListener('load', () => showPopup(false, 'Ошибка'));</script>"
 
@@ -785,6 +786,19 @@ async def add_city(city_name: str = Form(...)):
             conn.close()
     return RedirectResponse(url="/cities?status=error", status_code=303)
 
+@app.post("/delete-city", response_class=HTMLResponse)
+async def delete_city(city_name: str = Form(...)):
+    if city_name:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM cities WHERE name = ?", (city_name,))
+        cursor.execute("DELETE FROM districts WHERE city = ?", (city_name,))
+        conn.commit()
+        conn.close()
+        return RedirectResponse(url="/cities?status=success", status_code=303)
+    return RedirectResponse(url="/cities?status=error", status_code=303)
+
+# --- УПРАВЛЕНИЕ РАЙОНАМИ (С УДАЛЕНИЕМ) ---
 @app.get("/districts", response_class=HTMLResponse)
 async def districts_page(status: str = None):
     conn = sqlite3.connect(DB_PATH)
@@ -799,17 +813,21 @@ async def districts_page(status: str = None):
     city_options = "".join([f'<option value="{c}">{c}</option>' for c in cities])
     
     list_html = "".join([f"""
-        <div style="background: var(--input-bg); padding: 10px 12px; border-radius: 8px; margin-bottom: 8px; border: 1px solid var(--input-border);">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                <span style="font-size: 13px; font-weight: 600;">{d[1]}</span>
-                <span style="font-size: 11px; color: var(--text-muted);">Город: {d[0]}</span>
+        <div style="background: var(--input-bg); padding: 10px 12px; border-radius: 8px; margin-bottom: 8px; border: 1px solid var(--input-border); display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <div style="font-size: 13px; font-weight: 600;">📍 {d[1]}</div>
+                <div style="font-size: 11px; color: var(--text-muted);">Город: {d[0]}</div>
             </div>
+            <form method="POST" action="/delete-district" style="margin:0;">
+                <input type="hidden" name="district_name" value="{d[1]}">
+                <button type="submit" style="padding: 4px 8px; font-size: 11px; background: rgba(239, 68, 68, 0.2); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 6px; width: auto; margin: 0;">Удалить</button>
+            </form>
         </div>
     """ for d in districts]) if districts else '<p style="font-size: 11px; color: var(--text-muted); text-align: center;">Районы еще не добавлены</p>'
 
     popup_script = ""
     if status == "success":
-        popup_script = "<script>window.addEventListener('load', () => showPopup(true, 'Изменено'));</script>"
+        popup_script = "<script>window.addEventListener('load', () => showPopup(true, 'Успешно'));</script>"
     elif status == "error":
         popup_script = "<script>window.addEventListener('load', () => showPopup(false, 'Ошибка'));</script>"
 
@@ -825,7 +843,7 @@ async def districts_page(status: str = None):
                 <option value="" disabled selected>Выберите город</option>
                 {city_options}
             </select>
-            <input type="text" name="district_name" placeholder="Название района" required style="margin-bottom: 8px;">
+            <input type="text" name="district_name" placeholder="Название района (например, 7-ой квартал)" required style="margin-bottom: 8px;">
             <button type="submit">Сохранить район</button>
         </form>
 
@@ -853,6 +871,17 @@ async def add_district(city: str = Form(...), district_name: str = Form(...)):
             return RedirectResponse(url="/districts?status=success", status_code=303)
         except Exception:
             conn.close()
+    return RedirectResponse(url="/districts?status=error", status_code=303)
+
+@app.post("/delete-district", response_class=HTMLResponse)
+async def delete_district(district_name: str = Form(...)):
+    if district_name:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM districts WHERE district = ?", (district_name,))
+        conn.commit()
+        conn.close()
+        return RedirectResponse(url="/districts?status=success", status_code=303)
     return RedirectResponse(url="/districts?status=error", status_code=303)
 
 @app.get("/categories", response_class=HTMLResponse)
@@ -941,8 +970,6 @@ async def products_page(status: str = None):
                 <span style="font-size: 11px; color: #38bdf8;">${p[4]}</span>
             </div>
             <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Район: {p[2]} ({p[1]})</div>
-            {"<div style='font-size: 11px; color: #4ade80; word-break: break-all;'>🔗 Ссылка: <a href='" + p[5] + "' target='_blank' style='color: #4ade80;'>Перейти</a></div>" if p[5] else ""}
-            {"<div style='font-size: 11px; color: #38bdf8; word-break: break-all;'>🖼️ Фото: <a href='" + p[6] + "' target='_blank' style='color: #38bdf8;'>Смотреть</a></div>" if p[6] else ""}
         </div>
     """ for p in products]) if products else '<p style="font-size: 11px; color: var(--text-muted); text-align: center;">Товары еще не добавлены</p>'
 
@@ -950,7 +977,7 @@ async def products_page(status: str = None):
     if status == "success":
         popup_script = "<script>window.addEventListener('load', () => showPopup(true, 'Изменено'));</script>"
     elif status == "error":
-        popup_script = "<script>window.addEventListener('load', () => showPopup(false, 'Укажите ссылку или фото'));</script>"
+        popup_script = "<script>window.addEventListener('load', () => showPopup(false, 'Ошибка'));</script>"
 
     content = f"""
         <div style="text-align:center; margin-bottom: 14px;">
@@ -974,8 +1001,8 @@ async def products_page(status: str = None):
             </select>
             <input type="text" name="product_name" placeholder="Название товара" required style="margin-bottom: 8px;">
             <input type="number" step="0.01" name="price" placeholder="Цена ($)" required style="margin-bottom: 8px;">
-            <input type="url" name="product_link" placeholder="Ссылка выдачи после оплаты (необязательно)" style="margin-bottom: 8px;">
-            <input type="url" name="photo_link" placeholder="Ссылка на фото товара (необязательно)" style="margin-bottom: 8px;">
+            <input type="url" name="product_link" placeholder="Ссылка выдачи" style="margin-bottom: 8px;">
+            <input type="url" name="photo_link" placeholder="Ссылка на фото (необязательно)" style="margin-bottom: 8px;">
             <button type="submit">Сохранить товар</button>
         </form>
 
