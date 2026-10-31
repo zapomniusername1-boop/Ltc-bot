@@ -1,7 +1,11 @@
 import os
-from fastapi import FastAPI, Form
+import asyncio
+from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 import uvicorn
+from aiogram import Bot, Dispatcher, types
+from aiogram.enums import ParseMode
+from aiogram.client.default import DefaultBotProperties
 
 app = FastAPI()
 
@@ -14,11 +18,24 @@ CATEGORIES_DB = []
 PRODUCTS_DB = []
 BOT_CONFIG = {"name": "Не привязан", "token": ""}
 
-# Настройки сообщений бота
+# Тексты сообщений бота, редактируемые в панели
 BOT_MESSAGES = {
     "welcome": "Добро пожаловать в STELLA SYSTEM! Выберите город и район для покупки.",
     "onetime": "Оплата прошла успешно! Вот ваш товар:"
 }
+
+# Инициализация Telegram бота (будет обновляться при сохранении токена)
+bot_instance = None
+dp = Dispatcher()
+
+def update_telegram_bot():
+    global bot_instance
+    if BOT_CONFIG["token"]:
+        bot_instance = Bot(token=BOT_CONFIG["token"], default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+
+@dp.message(lambda message: message.text == "/start")
+async def cmd_start(message: types.Message):
+    await message.answer(BOT_MESSAGES["welcome"])
 
 BASE_TEMPLATE = """<!DOCTYPE html>
 <html lang="ru">
@@ -348,10 +365,10 @@ async def update_bot(bot_name: str = Form(...), bot_token: str = Form(...)):
     if bot_name and bot_token:
         BOT_CONFIG["name"] = bot_name
         BOT_CONFIG["token"] = bot_token
+        update_telegram_bot()
         return RedirectResponse(url="/bot-settings?status=success", status_code=303)
     return RedirectResponse(url="/bot-settings?status=error", status_code=303)
 
-# РАЗДЕЛ РЕДАКТИРОВАНИЯ СООБЩЕНИЙ БОТА
 @app.get("/bot-messages", response_class=HTMLResponse)
 async def bot_messages_page(status: str = None):
     popup_script = ""
@@ -732,6 +749,21 @@ async def render_main_dashboard(intro: bool = True):
     
     final_content = dashboard_content.replace("__BOT_NAME__", BOT_CONFIG["name"]).replace("__DISTRICTS_LABELS__", labels_json).replace("__DISTRICTS_ITEMS__", items_json)
     return get_page(final_content, "STELLA SYSTEM - DASHBOARD", show_intro=intro, show_full_nav=True)
+
+# Автозапуск бота в фоновом режиме вместе с FastAPI
+@app.on_event("startup")
+async def on_startup():
+    async def start_bot():
+        while True:
+            if bot_instance:
+                try:
+                    await dp.start_polling(bot_instance)
+                except Exception:
+                    await asyncio.sleep(5)
+            else:
+                await asyncio.sleep(3)
+    
+    asyncio.create_task(start_bot())
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
