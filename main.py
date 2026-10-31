@@ -50,20 +50,21 @@ def init_db():
             photo_link TEXT
         )
     """)
+    # Таблица для клиентов (тех, кто зашел в бота)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            user_id INTEGER PRIMARY KEY,
+            username TEXT,
+            full_name TEXT,
+            first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
     conn.commit()
     
-    # Значения по умолчанию
     cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('bot_name', 'Не привязан')")
     cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('bot_token', '')")
     cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('welcome_msg', 'Добро пожаловать в STELLA SYSTEM! Выберите город для покупки:')")
     cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('onetime_msg', 'Оплата прошла успешно! Вот ваш товар:')")
-    
-    # Данные администратора по умолчанию
-    cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('admin_name', 'Admin Stella')")
-    cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('admin_username', '@stella_admin')")
-    cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('admin_id', '777888999')")
-    cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('admin_avatar', 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=200&auto=format&fit=crop')")
-    
     conn.commit()
     conn.close()
 
@@ -96,12 +97,23 @@ async def telegram_webhook(request: Request):
         data = await request.json()
         
         if "message" in data:
-            chat_id = data["message"]["chat"]["id"]
-            text = data["message"].get("text", "")
+            msg = data["message"]
+            chat_id = msg["chat"]["id"]
+            user = msg["from"]
+            user_id = user["id"]
+            username = user.get("username", "нет")
+            full_name = f"{user.get('first_name', '')} {user.get('last_name', '')}".strip()
+            
+            # Сохраняем пользователя в клиентскую базу
+            conn = sqlite3.connect("stella.db")
+            cursor = conn.cursor()
+            cursor.execute("INSERT OR IGNORE INTO users (user_id, username, full_name) VALUES (?, ?, ?)", 
+                           (user_id, f"@{username}" if username != "нет" else "нет", full_name))
+            conn.commit()
+
+            text = msg.get("text", "")
             
             if text == "/start":
-                conn = sqlite3.connect("stella.db")
-                cursor = conn.cursor()
                 cursor.execute("SELECT name FROM cities")
                 cities = [row[0] for row in cursor.fetchall()]
                 conn.close()
@@ -123,6 +135,8 @@ async def telegram_webhook(request: Request):
                         "text": welcome_msg,
                         "reply_markup": keyboard
                     })
+            else:
+                conn.close()
 
         elif "callback_query" in data:
             cq = data["callback_query"]
@@ -321,28 +335,15 @@ BASE_TEMPLATE = """<!DOCTYPE html>
             position: fixed; top: 0; left: -280px; width: 280px; height: 100%;
             background: var(--card-bg); backdrop-filter: blur(20px);
             border-right: 1px solid var(--border-color); z-index: 1000; padding: 24px;
-            transition: left 0.3s ease; display: flex; flex-direction: column; justify-content: space-between;
+            transition: left 0.3s ease; overflow-y: auto;
         }
         .sidebar.open { left: 0; }
-        .sidebar-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .sidebar-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
         .sidebar-menu a {
-            display: block; color: var(--text-color); text-decoration: none; padding: 10px 0;
+            display: block; color: var(--text-color); text-decoration: none; padding: 12px 0;
             border-bottom: 1px solid var(--input-border); font-size: 14px; font-weight: 500;
         }
         .sidebar-menu a:hover { color: #38bdf8; }
-
-        /* Блок профиля в сайдбаре */
-        .admin-profile {
-            background: var(--input-bg); border: 1px solid var(--border-color); padding: 12px;
-            border-radius: 12px; display: flex; align-items: center; gap: 12px; margin-top: 15px;
-        }
-        .admin-avatar {
-            width: 42px; height: 42px; border-radius: 50%; object-fit: cover;
-            border: 1px solid #38bdf8;
-        }
-        .admin-info h4 { font-size: 13px; font-weight: 600; color: var(--text-color); }
-        .admin-info p { font-size: 11px; color: #38bdf8; }
-        .admin-info span { font-size: 10px; color: var(--text-muted); display: block; }
 
         .theme-toggle {
             background: var(--card-bg); border: 1px solid var(--border-color); color: var(--text-color);
@@ -470,40 +471,22 @@ def get_page(content: str, title: str = "STELLA SYSTEM", show_intro: bool = Fals
             <button class="theme-toggle" onclick="toggleTheme()">🌓</button>
         </div>
         """
-        
-        # Получаем данные администратора из базы для сайдбара
-        adm_name = get_config("admin_name")
-        adm_user = get_config("admin_username")
-        adm_id = get_config("admin_id")
-        adm_avatar = get_config("admin_avatar")
-
-        sidebar_html = f"""
+        sidebar_html = """
         <div id="sidebar" class="sidebar">
-            <div>
-                <div class="sidebar-header">
-                    <h3>Управление</h3>
-                    <button class="menu-btn" onclick="toggleSidebar()">✕</button>
-                </div>
-                <div class="sidebar-menu">
-                    <a href="/dashboard">📊 Статистика и Графика</a>
-                    <a href="/bot-settings">🤖 Настройки бота</a>
-                    <a href="/bot-messages">💬 Сообщения бота</a>
-                    <a href="/cities">🏙️ Управление городами</a>
-                    <a href="/districts">📍 Управление районами</a>
-                    <a href="/categories">📂 Категории</a>
-                    <a href="/products">📦 Товары и выдача</a>
-                    <a href="/" style="color: #fca5a5;">🚪 Выход</a>
-                </div>
+            <div class="sidebar-header">
+                <h3>Управление</h3>
+                <button class="menu-btn" onclick="toggleSidebar()">✕</button>
             </div>
-
-            <!-- Блок профиля администратора -->
-            <div class="admin-profile">
-                <img src="{adm_avatar}" alt="Avatar" class="admin-avatar">
-                <div class="admin-info">
-                    <h4>{adm_name}</h4>
-                    <p>{adm_user}</p>
-                    <span>ID: {adm_id}</span>
-                </div>
+            <div class="sidebar-menu">
+                <a href="/dashboard">📊 Статистика и Графика</a>
+                <a href="/bot-settings">🤖 Настройки бота</a>
+                <a href="/bot-messages">💬 Сообщения бота</a>
+                <a href="/clients">👥 Клиентская база</a>
+                <a href="/cities">🏙️ Управление городами</a>
+                <a href="/districts">📍 Управление районами</a>
+                <a href="/categories">📂 Категории</a>
+                <a href="/products">📦 Товары и выдача</a>
+                <a href="/" style="color: #fca5a5;">🚪 Выход</a>
             </div>
         </div>
         """
@@ -557,6 +540,41 @@ async def check_pin(pin_code: str = Form(...)):
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard_get():
     return await render_main_dashboard(intro=False)
+
+# РАЗДЕЛ КЛИЕНТСКОЙ БАЗЫ
+@app.get("/clients", response_class=HTMLResponse)
+async def clients_page():
+    conn = sqlite3.connect("stella.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT user_id, username, full_name, first_seen FROM users ORDER BY first_seen DESC")
+    users = cursor.fetchall()
+    conn.close()
+
+    list_html = "".join([f"""
+        <div style="background: var(--input-bg); padding: 10px 12px; border-radius: 8px; margin-bottom: 8px; border: 1px solid var(--input-border);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                <span style="font-size: 13px; font-weight: 600; color: #38bdf8;">👤 {u[2] or 'Без имени'}</span>
+                <span style="font-size: 11px; color: #4ade80;">{u[1]}</span>
+            </div>
+            <div style="font-size: 11px; color: var(--text-muted);">ID: {u[0]} | Запуск: {u[3]}</div>
+        </div>
+    """ for u in users]) if users else '<p style="font-size: 11px; color: var(--text-muted); text-align: center;">Клиентов пока нет (никто еще не запустил бота)</p>'
+
+    content = f"""
+        <div style="text-align:center; margin-bottom: 14px;">
+            <p style="color: #38bdf8; font-size: 11px; letter-spacing: 2px; font-weight: 600;">АУДИТОРИЯ</p>
+            <h2 style="font-size: 18px; margin-top: 2px;">Клиентская база ({len(users)})</h2>
+        </div>
+
+        <div style="margin-bottom: 14px;">
+            <div style="max-height: 260px; overflow-y: auto;">
+                {list_html}
+            </div>
+        </div>
+
+        <a href='/dashboard' class='logout' style='background: #0284c7; color: #fff; border: none; text-decoration: none;'>← В дашборд</a>
+    """
+    return get_page(content, "STELLA SYSTEM - CLIENTS", show_intro=False, show_full_nav=True)
 
 @app.get("/bot-settings", response_class=HTMLResponse)
 async def bot_settings_page(status: str = None):
