@@ -2,3 +2,4 @@ fastapi
 uvicorn
 aiogram
 httpx
+python-multipart
