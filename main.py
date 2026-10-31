@@ -14,6 +14,12 @@ CATEGORIES_DB = []
 PRODUCTS_DB = []
 BOT_CONFIG = {"name": "Не привязан", "token": ""}
 
+# Настройки сообщений бота
+BOT_MESSAGES = {
+    "welcome": "Добро пожаловать в STELLA SYSTEM! Выберите город и район для покупки.",
+    "onetime": "Оплата прошла успешно! Вот ваш товар:"
+}
+
 BASE_TEMPLATE = """<!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -125,12 +131,12 @@ BASE_TEMPLATE = """<!DOCTYPE html>
             width: 100%; height: 160px; object-fit: cover; border-radius: 12px; margin-bottom: 20px;
             border: 1px solid rgba(255, 255, 255, 0.1); display: block;
         }
-        input, select { 
+        input, select, textarea { 
             width: 100%; padding: 13px; margin-bottom: 12px; border-radius: 10px; 
             border: 1px solid var(--input-border); background: var(--input-bg); 
-            color: var(--text-color); font-size: 14px; outline: none;
+            color: var(--text-color); font-size: 14px; outline: none; resize: vertical;
         }
-        input:focus, select:focus { border-color: #38bdf8; box-shadow: 0 0 10px rgba(56, 189, 248, 0.25); }
+        input:focus, select:focus, textarea:focus { border-color: #38bdf8; box-shadow: 0 0 10px rgba(56, 189, 248, 0.25); }
         button[type="submit"] { 
             width: 100%; padding: 13px; margin-top: 4px; border-radius: 10px; border: none;
             background: linear-gradient(135deg, #0284c7, #0369a1); color: #fff;
@@ -246,6 +252,7 @@ def get_page(content: str, title: str = "STELLA SYSTEM", show_intro: bool = Fals
             <div class="sidebar-menu">
                 <a href="/dashboard">📊 Статистика и Графика</a>
                 <a href="/bot-settings">🤖 Настройки бота</a>
+                <a href="/bot-messages">💬 Сообщения бота</a>
                 <a href="/cities">🏙️ Управление городами</a>
                 <a href="/districts">📍 Управление районами</a>
                 <a href="/categories">📂 Категории</a>
@@ -343,6 +350,44 @@ async def update_bot(bot_name: str = Form(...), bot_token: str = Form(...)):
         BOT_CONFIG["token"] = bot_token
         return RedirectResponse(url="/bot-settings?status=success", status_code=303)
     return RedirectResponse(url="/bot-settings?status=error", status_code=303)
+
+# РАЗДЕЛ РЕДАКТИРОВАНИЯ СООБЩЕНИЙ БОТА
+@app.get("/bot-messages", response_class=HTMLResponse)
+async def bot_messages_page(status: str = None):
+    popup_script = ""
+    if status == "success":
+        popup_script = "<script>window.addEventListener('load', () => showPopup(true, 'Изменено'));</script>"
+    elif status == "error":
+        popup_script = "<script>window.addEventListener('load', () => showPopup(false, 'Ошибка'));</script>"
+
+    content = f"""
+        <div style="text-align:center; margin-bottom: 14px;">
+            <p style="color: #38bdf8; font-size: 11px; letter-spacing: 2px; font-weight: 600;">КОНТЕНТ БОТА</p>
+            <h2 style="font-size: 18px; margin-top: 2px;">Настройка текстов</h2>
+        </div>
+
+        <form method="POST" action="/update-bot-messages" style="background: var(--input-bg); padding: 12px; border-radius: 12px; border: 1px solid var(--border-color); margin-bottom: 16px;">
+            <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 6px; font-weight: 600;">👋 ПРИВЕТСТВИЕ (/start):</p>
+            <textarea name="welcome_msg" rows="3" required style="margin-bottom: 10px;">{BOT_MESSAGES['welcome']}</textarea>
+            
+            <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 6px; font-weight: 600;">⚡ ОДНОРАЗОВОЕ СООБЩЕНИЕ (ПОСЛЕ ОПЛАТЫ):</p>
+            <textarea name="onetime_msg" rows="3" required style="margin-bottom: 10px;">{BOT_MESSAGES['onetime']}</textarea>
+
+            <button type="submit">Сохранить сообщения</button>
+        </form>
+
+        <a href='/dashboard' class='logout' style='background: #0284c7; color: #fff; border: none; text-decoration: none;'>← В дашборд</a>
+        {popup_script}
+    """
+    return get_page(content, "STELLA SYSTEM - BOT MESSAGES", show_intro=False, show_full_nav=True)
+
+@app.post("/update-bot-messages", response_class=HTMLResponse)
+async def update_bot_messages(welcome_msg: str = Form(...), onetime_msg: str = Form(...)):
+    if welcome_msg and onetime_msg:
+        BOT_MESSAGES["welcome"] = welcome_msg
+        BOT_MESSAGES["onetime"] = onetime_msg
+        return RedirectResponse(url="/bot-messages?status=success", status_code=303)
+    return RedirectResponse(url="/bot-messages?status=error", status_code=303)
 
 @app.get("/cities", response_class=HTMLResponse)
 async def cities_page(status: str = None):
@@ -488,7 +533,6 @@ async def add_category(category_name: str = Form(...)):
         return RedirectResponse(url="/categories?status=success", status_code=303)
     return RedirectResponse(url="/categories?status=error", status_code=303)
 
-# РАЗДЕЛ ТОВАРОВ (С ПОДДЕРЖКОЙ ФОТО ИЛИ ССЫЛКИ ВЫДАЧИ)
 @app.get("/products", response_class=HTMLResponse)
 async def products_page(status: str = None):
     cat_options = "".join([f'<option value="{c}">{c}</option>' for c in CATEGORIES_DB])
@@ -554,7 +598,6 @@ async def products_page(status: str = None):
 
 @app.post("/add-product", response_class=HTMLResponse)
 async def add_product(category: str = Form(...), city: str = Form(...), district: str = Form(...), product_name: str = Form(...), price: float = Form(...), product_link: str = Form(""), photo_link: str = Form("")):
-    # Проверяем, что заполнена либо ссылка на выдачу, либо фото
     if category and city and district and product_name and (product_link or photo_link):
         PRODUCTS_DB.append({
             "category": category,
