@@ -1,4 +1,4 @@
-тоimport os
+import os
 import sqlite3
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -175,7 +175,7 @@ async def telegram_webhook(request: Request):
             callback_data = cq["data"]
             query_id = cq["id"]
 
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=10.0) as client:
                 try:
                     await client.post(f"{api_url}/answerCallbackQuery", json={"callback_query_id": query_id})
                 except Exception as ex:
@@ -197,10 +197,8 @@ async def telegram_webhook(request: Request):
                                 "text": f"⚠️ В городе <b>{selected_city}</b> пока нет добавленных районов. Добавьте их в панели управления!",
                                 "parse_mode": "HTML"
                             })
-                            conn.close()
-                            return {"ok": True}
+                            return
 
-                        # Исправленная клавиатура для районов
                         keyboard = {
                             "inline_keyboard": [
                                 [{"text": f"📍 {d}", "callback_data": f"dist_{d}"}] 
@@ -225,8 +223,7 @@ async def telegram_webhook(request: Request):
                                 "chat_id": chat_id,
                                 "text": "⚠️ Категории товаров не настроены."
                             })
-                            conn.close()
-                            return {"ok": True}
+                            return
 
                         keyboard = {
                             "inline_keyboard": [
@@ -244,8 +241,7 @@ async def telegram_webhook(request: Request):
                     elif callback_data.startswith("cat_"):
                         parts = callback_data.replace("cat_", "").split("_", 1)
                         if len(parts) < 2:
-                            conn.close()
-                            return {"ok": True}
+                            return
                         
                         selected_district = parts[0]
                         selected_cat = parts[1]
@@ -259,8 +255,7 @@ async def telegram_webhook(request: Request):
                                 "text": f"📦 В этой категории для района <b>{selected_district}</b> пока нет товаров.",
                                 "parse_mode": "HTML"
                             })
-                            conn.close()
-                            return {"ok": True}
+                            return
 
                         keyboard = {
                             "inline_keyboard": [
@@ -449,4 +444,742 @@ BASE_TEMPLATE = """<!DOCTYPE html>
         }
 
         #status-popup {
-            display: none; position: fixed; top: 0; left: 0; width: 100% """
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(5, 8, 19, 0.7); z-index: 3000; justify-content: center; align-items: center;
+        }
+        .popup-box {
+            background: #ffffff; color: #0f172a; padding: 30px; border-radius: 20px;
+            text-align: center; width: 260px; box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+            animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+        @keyframes popIn {
+            0% { transform: scale(0.7); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .popup-icon { font-size: 48px; margin-bottom: 10px; }
+        .popup-text { font-size: 16px; font-weight: 600; color: #0f172a; }
+    </style>
+</head>
+<body data-theme="dark">
+    __INTRO__
+    __HEADER__
+    __SIDEBAR__
+    
+    <div class="card">
+        __CONTENT__
+    </div>
+
+    <div id="status-popup">
+        <div class="popup-box">
+            <div id="popup-icon" class="popup-icon"></div>
+            <div id="popup-text" class="popup-text"></div>
+        </div>
+    </div>
+
+    <script>
+        function toggleSidebar() {
+            const sb = document.getElementById('sidebar');
+            if (sb) sb.classList.toggle('open');
+        }
+        function toggleTheme() {
+            const body = document.body;
+            const newTheme = body.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+            body.setAttribute('data-theme', newTheme);
+            localStorage.setItem('stella_theme', newTheme);
+        }
+        document.body.setAttribute('data-theme', localStorage.getItem('stella_theme') || 'dark');
+
+        function showPopup(success, message) {
+            const popup = document.getElementById('status-popup');
+            const icon = document.getElementById('popup-icon');
+            const text = document.getElementById('popup-text');
+            
+            icon.innerHTML = success ? '✅' : '❌';
+            text.innerText = message;
+            popup.style.display = 'flex';
+
+            setTimeout(() => {
+                popup.style.display = 'none';
+            }, 1800);
+        }
+
+        window.addEventListener('load', () => {
+            const intro = document.getElementById('intro-screen');
+            if (intro) {
+                setTimeout(() => {
+                    intro.style.opacity = '0';
+                    setTimeout(() => intro.remove(), 800);
+                }, 2800);
+            }
+        });
+    </script>
+</body>
+</html>"""
+
+def get_page(content: str, title: str = "STELLA SYSTEM", show_intro: bool = False, show_full_nav: bool = False) -> str:
+    intro_html = """
+    <div id="intro-screen">
+        <div class="intro-content">
+            <div class="intro-title">STELLA</div>
+            <div class="intro-line"></div>
+        </div>
+    </div>
+    """ if show_intro else ""
+    
+    if show_full_nav:
+        header_html = """
+        <div class="header-container">
+            <button class="menu-btn" onclick="toggleSidebar()">☰</button>
+            <div class="header-title" style="text-align: center;">
+                <h1>STELLA SYSTEM</h1>
+                <p>CONTROL SYSTEM</p>
+            </div>
+            <button class="theme-toggle" onclick="toggleTheme()">🌓</button>
+        </div>
+        """
+        
+        adm_name = get_config("admin_name")
+        adm_user = get_config("admin_username")
+        adm_id = get_config("admin_id")
+        adm_avatar = get_config("admin_avatar")
+
+        sidebar_html = f"""
+        <div id="sidebar" class="sidebar">
+            <div>
+                <div class="sidebar-header">
+                    <h3>Управление</h3>
+                    <button class="menu-btn" onclick="toggleSidebar()">✕</button>
+                </div>
+                <div class="sidebar-menu">
+                    <a href="/dashboard">📊 Статистика и Графика</a>
+                    <a href="/bot-settings">🤖 Настройки бота</a>
+                    <a href="/bot-messages">💬 Сообщения бота</a>
+                    <a href="/clients">👥 Клиентская база</a>
+                    <a href="/cities">🏙️ Управление городами</a>
+                    <a href="/districts">📍 Управление районами</a>
+                    <a href="/categories">📂 Категории</a>
+                    <a href="/products">📦 Товары и выдача</a>
+                    <a href="/" style="color: #fca5a5;">🚪 Выход</a>
+                </div>
+            </div>
+            <div class="admin-profile">
+                <img src="{adm_avatar}" alt="Avatar" class="admin-avatar">
+                <div class="admin-info">
+                    <h4>{adm_name}</h4>
+                    <p>{adm_user}</p>
+                    <span>ID: {adm_id}</span>
+                </div>
+            </div>
+        </div>
+        """
+    else:
+        header_html = """
+        <div class="header-container" style="justify-content: center; position: relative;">
+            <div class="header-title" style="text-align: center;">
+                <h1>STELLA SYSTEM</h1>
+                <p>ACCESS PORTAL</p>
+            </div>
+            <button class="theme-toggle" onclick="toggleTheme()" style="position: absolute; right: 0; top: 0;">🌓</button>
+        </div>
+        """
+        sidebar_html = ""
+
+    return BASE_TEMPLATE.replace("__TITLE__", title).replace("__CONTENT__", content).replace("__INTRO__", intro_html).replace("__HEADER__", header_html).replace("__SIDEBAR__", sidebar_html)
+
+@app.get("/", response_class=HTMLResponse)
+async def index():
+    content = """
+        <img src="https://images.unsplash.com/photo-1451187580459-43490279c0fa?q=80&w=800&auto=format&fit=crop" alt="Stella Space" class="banner-img">
+        <form method="POST" action="/verify-pin">
+            <input type="text" name="username" placeholder="👤 Логин" required>
+            <input type="password" name="password" placeholder="🔒 Пароль" required>
+            <button type="submit">Войти</button>
+        </form>
+    """
+    return get_page(content, "STELLA SYSTEM - LOGIN", show_intro=False, show_full_nav=False)
+
+@app.post("/verify-pin", response_class=HTMLResponse)
+async def verify_pin_page(username: str = Form(...), password: str = Form(...)):
+    content = """
+        <div style="text-align:center; margin-bottom: 16px;">
+            <p style="color: #38bdf8; font-size: 13px; font-weight: 600;">🔐 Безопасность STELLA</p>
+            <h3 style="margin-top:6px; font-size:16px;">Введите 4-значный ПИН-код</h3>
+        </div>
+        <form method="POST" action="/check-pin">
+            <input type="password" name="pin_code" placeholder="• • • •" maxlength="4" inputmode="numeric" style="text-align:center; font-size: 20px; letter-spacing: 8px;" required>
+            <button type="submit">Подтвердить</button>
+        </form>
+        <a href="/" class="logout">Отмена</a>
+    """
+    return get_page(content, "STELLA SYSTEM - PIN", show_intro=False, show_full_nav=False)
+
+@app.post("/check-pin", response_class=HTMLResponse)
+async def check_pin(pin_code: str = Form(...)):
+    if pin_code != SECRET_PIN:
+        return RedirectResponse(url="/", status_code=303)
+    return await render_main_dashboard(intro=True)
+
+@app.get("/dashboard", response_class=HTMLResponse)
+async def dashboard_get():
+    return await render_main_dashboard(intro=False)
+
+@app.get("/clients", response_class=HTMLResponse)
+async def clients_page():
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT user_id, username, full_name, avatar_url, first_seen FROM users ORDER BY first_seen DESC")
+    users = cursor.fetchall()
+    conn.close()
+
+    list_html = "".join([f"""
+        <div style="display: flex; align-items: center; gap: 12px; background: var(--input-bg); padding: 10px 12px; border-radius: 10px; margin-bottom: 8px; border: 1px solid var(--input-border);">
+            <img src="{u[3]}" alt="Avatar" style="width: 38px; height: 38px; border-radius: 50%; object-fit: cover; border: 1px solid #38bdf8; flex-shrink: 0;">
+            <div style="flex-grow: 1; overflow: hidden;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                    <span style="font-size: 13px; font-weight: 600; color: #f8fafc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{u[2] or 'Без имени'}</span>
+                    <span style="font-size: 11px; color: #4ade80; font-weight: 500;">{u[1]}</span>
+                </div>
+                <div style="font-size: 10px; color: var(--text-muted);">ID: {u[0]} | Запуск: {u[4]}</div>
+            </div>
+        </div>
+    """ for u in users]) if users else '<p style="font-size: 11px; color: var(--text-muted); text-align: center;">Клиентов пока нет (никто еще не запустил бота)</p>'
+
+    content = f"""
+        <div style="text-align:center; margin-bottom: 14px;">
+            <p style="color: #38bdf8; font-size: 11px; letter-spacing: 2px; font-weight: 600;">АУДИТОРИЯ</p>
+            <h2 style="font-size: 18px; margin-top: 2px;">Клиентская база ({len(users)})</h2>
+        </div>
+
+        <div style="margin-bottom: 14px;">
+            <div style="max-height: 280px; overflow-y: auto;">
+                {list_html}
+            </div>
+        </div>
+
+        <a href='/dashboard' class='logout' style='background: #0284c7; color: #fff; border: none; text-decoration: none;'>← В дашборд</a>
+    """
+    return get_page(content, "STELLA SYSTEM - CLIENTS", show_intro=False, show_full_nav=True)
+
+@app.get("/bot-settings", response_class=HTMLResponse)
+async def bot_settings_page(status: str = None):
+    bot_name = get_config("bot_name")
+    popup_script = ""
+    if status == "success":
+        popup_script = "<script>window.addEventListener('load', () => showPopup(true, 'Изменено'));</script>"
+    elif status == "error":
+        popup_script = "<script>window.addEventListener('load', () => showPopup(false, 'Ошибка'));</script>"
+
+    content = f"""
+        <div style="text-align:center; margin-bottom: 14px;">
+            <p style="color: #38bdf8; font-size: 11px; letter-spacing: 2px; font-weight: 600;">ИНТЕГРАЦИЯ</p>
+            <h2 style="font-size: 18px; margin-top: 2px;">Управление ботом</h2>
+        </div>
+
+        <div style="background: var(--input-bg); padding: 12px; border-radius: 12px; border: 1px solid var(--border-color); margin-bottom: 14px;">
+            <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">ТЕКУЩИЙ СТАТУС:</p>
+            <h3 style="font-size: 14px; color: #4ade80; margin-bottom: 10px;">🤖 {bot_name}</h3>
+        </div>
+
+        <form method="POST" action="/update-bot" style="background: var(--input-bg); padding: 12px; border-radius: 12px; border: 1px solid var(--border-color); margin-bottom: 16px;">
+            <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 8px; font-weight: 600;">⚙️ ПРИВЯЗАТЬ НОВОГО БОТА:</p>
+            <input type="text" name="bot_name" placeholder="Имя бота (например, @MyBot)" required style="margin-bottom: 8px;">
+            <input type="text" name="bot_token" placeholder="Токен от BotFather" required style="margin-bottom: 8px;">
+            <button type="submit">Сохранить и запустить</button>
+        </form>
+
+        <a href='/dashboard' class='logout' style='background: #0284c7; color: #fff; border: none; text-decoration: none;'>← В дашборд</a>
+        {popup_script}
+    """
+    return get_page(content, "STELLA SYSTEM - BOT SETTINGS", show_intro=False, show_full_nav=True)
+
+@app.post("/update-bot", response_class=HTMLResponse)
+async def update_bot(request: Request, bot_name: str = Form(...), bot_token: str = Form(...)):
+    if bot_name and bot_token:
+        set_config("bot_name", bot_name)
+        set_config("bot_token", bot_token)
+        
+        host_url = str(request.base_url).rstrip('/')
+        webhook_url = f"{host_url}/webhook"
+        async with httpx.AsyncClient() as client:
+            await client.get(f"https://api.telegram.org/bot{bot_token}/setWebhook?url={webhook_url}")
+            
+        return RedirectResponse(url="/bot-settings?status=success", status_code=303)
+    return RedirectResponse(url="/bot-settings?status=error", status_code=303)
+
+@app.get("/bot-messages", response_class=HTMLResponse)
+async def bot_messages_page(status: str = None):
+    welcome_msg = get_config("welcome_msg")
+    onetime_msg = get_config("onetime_msg")
+    
+    popup_script = ""
+    if status == "success":
+        popup_script = "<script>window.addEventListener('load', () => showPopup(true, 'Изменено'));</script>"
+    elif status == "error":
+        popup_script = "<script>window.addEventListener('load', () => showPopup(false, 'Ошибка'));</script>"
+
+    content = f"""
+        <div style="text-align:center; margin-bottom: 14px;">
+            <p style="color: #38bdf8; font-size: 11px; letter-spacing: 2px; font-weight: 600;">КОНТЕНТ БОТА</p>
+            <h2 style="font-size: 18px; margin-top: 2px;">Настройка текстов</h2>
+        </div>
+
+        <form method="POST" action="/update-bot-messages" style="background: var(--input-bg); padding: 12px; border-radius: 12px; border: 1px solid var(--border-color); margin-bottom: 16px;">
+            <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 6px; font-weight: 600;">👋 ПРИВЕТСТВИЕ (/start):</p>
+            <textarea name="welcome_msg" rows="3" required style="margin-bottom: 10px;">{welcome_msg}</textarea>
+            
+            <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 6px; font-weight: 600;">⚡ ОДНОРАЗОВОЕ СООБЩЕНИЕ (ПОСЛЕ ОПЛАТЫ):</p>
+            <textarea name="onetime_msg" rows="3" required style="margin-bottom: 10px;">{onetime_msg}</textarea>
+
+            <button type="submit">Сохранить сообщения</button>
+        </form>
+
+        <a href='/dashboard' class='logout' style='background: #0284c7; color: #fff; border: none; text-decoration: none;'>← В дашборд</a>
+        {popup_script}
+    """
+    return get_page(content, "STELLA SYSTEM - BOT MESSAGES", show_intro=False, show_full_nav=True)
+
+@app.post("/update-bot-messages", response_class=HTMLResponse)
+async def update_bot_messages(welcome_msg: str = Form(...), onetime_msg: str = Form(...)):
+    if welcome_msg and onetime_msg:
+        set_config("welcome_msg", welcome_msg)
+        set_config("onetime_msg", onetime_msg)
+        return RedirectResponse(url="/bot-messages?status=success", status_code=303)
+    return RedirectResponse(url="/bot-messages?status=error", status_code=303)
+
+@app.get("/cities", response_class=HTMLResponse)
+async def cities_page(status: str = None):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT name FROM cities")
+    cities = [row[0] for row in cursor.fetchall()]
+    conn.close()
+
+    list_html = "".join([f"""
+        <div style="display: flex; justify-content: space-between; align-items: center; background: var(--input-bg); padding: 8px 12px; border-radius: 8px; margin-bottom: 8px; border: 1px solid var(--input-border);">
+            <span style="font-size: 13px; font-weight: 600;">🏙️ {c}</span>
+            <form method="POST" action="/delete-city" style="margin:0;">
+                <input type="hidden" name="city_name" value="{c}">
+                <button type="submit" style="padding: 4px 8px; font-size: 11px; background: rgba(239, 68, 68, 0.2); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 6px; width: auto; margin: 0;">Удалить</button>
+            </form>
+        </div>
+    """ for c in cities]) if cities else '<p style="font-size: 11px; color: var(--text-muted); text-align: center;">Города еще не добавлены</p>'
+
+    popup_script = ""
+    if status == "success":
+        popup_script = "<script>window.addEventListener('load', () => showPopup(true, 'Успешно'));</script>"
+    elif status == "error":
+        popup_script = "<script>window.addEventListener('load', () => showPopup(false, 'Ошибка'));</script>"
+
+    content = f"""
+        <div style="text-align:center; margin-bottom: 14px;">
+            <p style="color: #38bdf8; font-size: 11px; letter-spacing: 2px; font-weight: 600;">БАЗА ДАННЫХ</p>
+            <h2 style="font-size: 18px; margin-top: 2px;">Управление городами</h2>
+        </div>
+
+        <form method="POST" action="/add-city" style="background: var(--input-bg); padding: 12px; border-radius: 12px; border: 1px solid var(--border-color); margin-bottom: 16px;">
+            <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 8px; font-weight: 600;">➕ ДОБАВИТЬ ГОРОД:</p>
+            <input type="text" name="city_name" placeholder="Название города" required style="margin-bottom: 8px;">
+            <button type="submit">Сохранить город</button>
+        </form>
+
+        <div style="margin-bottom: 14px;">
+            <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 6px; font-weight: 600;">СПИСОК ГОРОДОВ:</p>
+            <div style="max-height: 160px; overflow-y: auto;">
+                {list_html}
+            </div>
+        </div>
+
+        <a href='/dashboard' class='logout' style='background: #0284c7; color: #fff; border: none; text-decoration: none;'>← В дашборд</a>
+        {popup_script}
+    """
+    return get_page(content, "STELLA SYSTEM - CITIES", show_intro=False, show_full_nav=True)
+
+@app.post("/add-city", response_class=HTMLResponse)
+async def add_city(city_name: str = Form(...)):
+    if city_name:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        try:
+            cursor.execute("INSERT OR IGNORE INTO cities (name) VALUES (?)", (city_name.strip(),))
+            conn.commit()
+            conn.close()
+            return RedirectResponse(url="/cities?status=success", status_code=303)
+        except Exception:
+            conn.close()
+    return RedirectResponse(url="/cities?status=error", status_code=303)
+
+@app.post("/delete-city", response_class=HTMLResponse)
+async def delete_city(city_name: str = Form(...)):
+    if city_name:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM cities WHERE name = ?", (city_name,))
+        cursor.execute("DELETE FROM districts WHERE city = ?", (city_name,))
+        conn.commit()
+        conn.close()
+        return RedirectResponse(url="/cities?status=success", status_code=303)
+    return RedirectResponse(url="/cities?status=error", status_code=303)
+
+@app.get("/districts", response_class=HTMLResponse)
+async def districts_page(status: str = None):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT name FROM cities")
+    cities = [row[0] for row in cursor.fetchall()]
+    
+    cursor.execute("SELECT city, district FROM districts")
+    districts = cursor.fetchall()
+    conn.close()
+
+    city_options = "".join([f'<option value="{c}">{c}</option>' for c in cities])
+    
+    list_html = "".join([f"""
+        <div style="background: var(--input-bg); padding: 10px 12px; border-radius: 8px; margin-bottom: 8px; border: 1px solid var(--input-border); display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <div style="font-size: 13px; font-weight: 600;">📍 {d[1]}</div>
+                <div style="font-size: 11px; color: var(--text-muted);">Город: {d[0]}</div>
+            </div>
+            <form method="POST" action="/delete-district" style="margin:0;">
+                <input type="hidden" name="district_name" value="{d[1]}">
+                <button type="submit" style="padding: 4px 8px; font-size: 11px; background: rgba(239, 68, 68, 0.2); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 6px; width: auto; margin: 0;">Удалить</button>
+            </form>
+        </div>
+    """ for d in districts]) if districts else '<p style="font-size: 11px; color: var(--text-muted); text-align: center;">Районы еще не добавлены</p>'
+
+    popup_script = ""
+    if status == "success":
+        popup_script = "<script>window.addEventListener('load', () => showPopup(true, 'Успешно'));</script>"
+    elif status == "error":
+        popup_script = "<script>window.addEventListener('load', () => showPopup(false, 'Ошибка'));</script>"
+
+    content = f"""
+        <div style="text-align:center; margin-bottom: 14px;">
+            <p style="color: #38bdf8; font-size: 11px; letter-spacing: 2px; font-weight: 600;">БАЗА ДАННЫХ</p>
+            <h2 style="font-size: 18px; margin-top: 2px;">Управление районами</h2>
+        </div>
+
+        <form method="POST" action="/add-district" style="background: var(--input-bg); padding: 12px; border-radius: 12px; border: 1px solid var(--border-color); margin-bottom: 16px;">
+            <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 8px; font-weight: 600;">➕ ДОБАВИТЬ РАЙОН:</p>
+            <select name="city" required style="margin-bottom: 8px;">
+                <option value="" disabled selected>Выберите город</option>
+                {city_options}
+            </select>
+            <input type="text" name="district_name" placeholder="Название района (например, Центр)" required style="margin-bottom: 8px;">
+            <button type="submit">Сохранить район</button>
+        </form>
+
+        <div style="margin-bottom: 14px;">
+            <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 6px; font-weight: 600;">СПИСОК РАЙОНОВ:</p>
+            <div style="max-height: 160px; overflow-y: auto;">
+                {list_html}
+            </div>
+        </div>
+
+        <a href='/dashboard' class='logout' style='background: #0284c7; color: #fff; border: none; text-decoration: none;'>← В дашборд</a>
+        {popup_script}
+    """
+    return get_page(content, "STELLA SYSTEM - DISTRICTS", show_intro=False, show_full_nav=True)
+
+@app.post("/add-district", response_class=HTMLResponse)
+async def add_district(city: str = Form(...), district_name: str = Form(...)):
+    if city and district_name:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        try:
+            cursor.execute("INSERT OR IGNORE INTO districts (city, district) VALUES (?, ?)", (city.strip(), district_name.strip()))
+            conn.commit()
+            conn.close()
+            return RedirectResponse(url="/districts?status=success", status_code=303)
+        except Exception:
+            conn.close()
+    return RedirectResponse(url="/districts?status=error", status_code=303)
+
+@app.post("/delete-district", response_class=HTMLResponse)
+async def delete_district(district_name: str = Form(...)):
+    if district_name:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM districts WHERE district = ?", (district_name,))
+        conn.commit()
+        conn.close()
+        return RedirectResponse(url="/districts?status=success", status_code=303)
+    return RedirectResponse(url="/districts?status=error", status_code=303)
+
+@app.get("/categories", response_class=HTMLResponse)
+async def categories_page(status: str = None):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT name FROM categories")
+    categories = [row[0] for row in cursor.fetchall()]
+    conn.close()
+
+    list_html = "".join([f"""
+        <div style="display: flex; justify-content: space-between; align-items: center; background: var(--input-bg); padding: 10px 12px; border-radius: 8px; margin-bottom: 8px; border: 1px solid var(--input-border);">
+            <span style="font-size: 13px; font-weight: 600;">📂 {cat}</span>
+        </div>
+    """ for cat in categories]) if categories else '<p style="font-size: 11px; color: var(--text-muted); text-align: center;">Категории не добавлены</p>'
+
+    popup_script = ""
+    if status == "success":
+        popup_script = "<script>window.addEventListener('load', () => showPopup(true, 'Изменено'));</script>"
+    elif status == "error":
+        popup_script = "<script>window.addEventListener('load', () => showPopup(false, 'Ошибка'));</script>"
+
+    content = f"""
+        <div style="text-align:center; margin-bottom: 14px;">
+            <p style="color: #38bdf8; font-size: 11px; letter-spacing: 2px; font-weight: 600;">КАТАЛОГ</p>
+            <h2 style="font-size: 18px; margin-top: 2px;">Управление категориями</h2>
+        </div>
+
+        <form method="POST" action="/add-category" style="background: var(--input-bg); padding: 12px; border-radius: 12px; border: 1px solid var(--border-color); margin-bottom: 16px;">
+            <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 8px; font-weight: 600;">➕ ДОБАВИТЬ КАТЕГОРИЮ:</p>
+            <input type="text" name="category_name" placeholder="Название категории" required style="margin-bottom: 8px;">
+            <button type="submit">Сохранить категорию</button>
+        </form>
+
+        <div style="margin-bottom: 14px;">
+            <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 6px; font-weight: 600;">СПИСОК КАТЕГОРИЙ:</p>
+            <div style="max-height: 160px; overflow-y: auto;">
+                {list_html}
+            </div>
+        </div>
+
+        <a href='/dashboard' class='logout' style='background: #0284c7; color: #fff; border: none; text-decoration: none;'>← В дашборд</a>
+        {popup_script}
+    """
+    return get_page(content, "STELLA SYSTEM - CATEGORIES", show_intro=False, show_full_nav=True)
+
+@app.post("/add-category", response_class=HTMLResponse)
+async def add_category(category_name: str = Form(...)):
+    if category_name:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        try:
+            cursor.execute("INSERT OR IGNORE INTO categories (name) VALUES (?)", (category_name.strip(),))
+            conn.commit()
+            conn.close()
+            return RedirectResponse(url="/categories?status=success", status_code=303)
+        except Exception:
+            conn.close()
+    return RedirectResponse(url="/categories?status=error", status_code=303)
+
+@app.get("/products", response_class=HTMLResponse)
+async def products_page(status: str = None):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT name FROM categories")
+    categories = [row[0] for row in cursor.fetchall()]
+    
+    cursor.execute("SELECT name FROM cities")
+    cities = [row[0] for row in cursor.fetchall()]
+
+    cursor.execute("SELECT district, city FROM districts")
+    districts = cursor.fetchall()
+
+    cursor.execute("SELECT category, city, district, name, price, product_link, photo_link FROM products")
+    products = cursor.fetchall()
+    conn.close()
+
+    cat_options = "".join([f'<option value="{c}">{c}</option>' for c in categories])
+    city_options = "".join([f'<option value="{c}">{c}</option>' for c in cities])
+    district_options = "".join([f'<option value="{d[0]}">{d[0]} ({d[1]})</option>' for d in districts])
+
+    list_html = "".join([f"""
+        <div style="background: var(--input-bg); padding: 10px 12px; border-radius: 8px; margin-bottom: 8px; border: 1px solid var(--input-border);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                <span style="font-size: 13px; font-weight: 600;">📦 {p[3]}</span>
+                <span style="font-size: 11px; color: #38bdf8;">${p[4]}</span>
+            </div>
+            <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Район: {p[2]} ({p[1]})</div>
+        </div>
+    """ for p in products]) if products else '<p style="font-size: 11px; color: var(--text-muted); text-align: center;">Товары еще не добавлены</p>'
+
+    popup_script = ""
+    if status == "success":
+        popup_script = "<script>window.addEventListener('load', () => showPopup(true, 'Изменено'));</script>"
+    elif status == "error":
+        popup_script = "<script>window.addEventListener('load', () => showPopup(false, 'Ошибка'));</script>"
+
+    content = f"""
+        <div style="text-align:center; margin-bottom: 14px;">
+            <p style="color: #38bdf8; font-size: 11px; letter-spacing: 2px; font-weight: 600;">КАТАЛОГ</p>
+            <h2 style="font-size: 18px; margin-top: 2px;">Товары и выдача</h2>
+        </div>
+
+        <form method="POST" action="/add-product" style="background: var(--input-bg); padding: 12px; border-radius: 12px; border: 1px solid var(--border-color); margin-bottom: 16px;">
+            <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 8px; font-weight: 600;">➕ ДОБАВИТЬ ТОВАР:</p>
+            <select name="category" required style="margin-bottom: 8px;">
+                <option value="" disabled selected>Выберите категорию</option>
+                {cat_options}
+            </select>
+            <select name="city" required style="margin-bottom: 8px;">
+                <option value="" disabled selected>Выберите город</option>
+                {city_options}
+            </select>
+            <select name="district" required style="margin-bottom: 8px;">
+                <option value="" disabled selected>Выберите район</option>
+                {district_options}
+            </select>
+            <input type="text" name="product_name" placeholder="Название товара" required style="margin-bottom: 8px;">
+            <input type="number" step="0.01" name="price" placeholder="Цена ($)" required style="margin-bottom: 8px;">
+            <input type="url" name="product_link" placeholder="Ссылка выдачи" style="margin-bottom: 8px;">
+            <input type="url" name="photo_link" placeholder="Ссылка на фото (необязательно)" style="margin-bottom: 8px;">
+            <button type="submit">Сохранить товар</button>
+        </form>
+
+        <div style="margin-bottom: 14px;">
+            <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 6px; font-weight: 600;">СПИСОК ТОВАРОВ:</p>
+            <div style="max-height: 180px; overflow-y: auto;">
+                {list_html}
+            </div>
+        </div>
+
+        <a href='/dashboard' class='logout' style='background: #0284c7; color: #fff; border: none; text-decoration: none;'>← В дашборд</a>
+        {popup_script}
+    """
+    return get_page(content, "STELLA SYSTEM - PRODUCTS", show_intro=False, show_full_nav=True)
+
+@app.post("/add-product", response_class=HTMLResponse)
+async def add_product(category: str = Form(...), city: str = Form(...), district: str = Form(...), product_name: str = Form(...), price: float = Form(...), product_link: str = Form(""), photo_link: str = Form("")):
+    if category and city and district and product_name and (product_link or photo_link):
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO products (category, city, district, name, price, product_link, photo_link) VALUES (?, ?, ?, ?, ?, ?, ?)", 
+                       (category.strip(), city.strip(), district.strip(), product_name.strip(), price, product_link.strip(), photo_link.strip()))
+        conn.commit()
+        conn.close()
+        return RedirectResponse(url="/products?status=success", status_code=303)
+    return RedirectResponse(url="/products?status=error", status_code=303)
+
+async def render_main_dashboard(intro: bool = True):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT district, items FROM districts")
+    districts_data = cursor.fetchall()
+    conn.close()
+
+    labels = [d[0] for d in districts_data] if districts_data else ["Нет районов"]
+    items_data = [d[1] for d in districts_data] if districts_data else [0]
+    bot_name = get_config("bot_name")
+
+    dashboard_content = """
+        <div style="text-align:center; margin-bottom: 12px;">
+            <p style="color: #38bdf8; font-size: 11px; letter-spacing: 2px; font-weight: 600;">АНАЛИТИКА СИСТЕМЫ</p>
+            <h2 style="font-size: 18px; margin-top: 2px;">Доходы и Районы</h2>
+        </div>
+
+        <div style="background: var(--input-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 12px; margin-bottom: 12px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="font-size: 11px; color: var(--text-muted);">Активный бот:</span>
+                <span style="font-size: 12px; color: #4ade80; font-weight: 600;">🤖 __BOT_NAME__</span>
+            </div>
+        </div>
+
+        <div style="background: var(--input-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 12px; margin-bottom: 14px;">
+            <div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 6px;">
+                <span style="font-size: 11px; color: var(--text-muted);">Доход по месяцам (USD / LTC):</span>
+                <span id="selected-month" style="font-size: 11px; color: #38bdf8; font-weight: 600;">Все</span>
+            </div>
+            <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+                <div style="flex: 1; background: rgba(56, 189, 248, 0.08); padding: 6px; border-radius: 8px; text-align: center;">
+                    <span style="font-size: 9px; color: var(--text-muted);">БАЛАНС USD:</span>
+                    <div id="stat-usd" style="font-size: 13px; color: #38bdf8; font-weight: 600;">$0.00</div>
+                </div>
+                <div style="flex: 1; background: rgba(74, 222, 128, 0.08); padding: 6px; border-radius: 8px; text-align: center;">
+                    <span style="font-size: 9px; color: var(--text-muted);">БАЛАНС LTC:</span>
+                    <div id="stat-ltc" style="font-size: 13px; color: #4ade80; font-weight: 600;">0.00 LTC</div>
+                </div>
+            </div>
+            <canvas id="incomeChart" style="max-height: 120px;"></canvas>
+        </div>
+
+        <div style="background: var(--input-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 12px; margin-bottom: 14px;">
+            <div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 6px;">
+                <span style="font-size: 11px; color: var(--text-muted);">Районы (товаров куплено):</span>
+                <a href="/products" style="font-size: 10px; color: #38bdf8; text-decoration: none; font-weight: 600;">⚙️ Товары</a>
+            </div>
+            <div style="background: rgba(15, 23, 42, 0.5); padding: 6px; border-radius: 8px; text-align: center; margin-bottom: 8px;">
+                <span style="font-size: 9px; color: var(--text-muted);" id="label-district">ВЫБРАННЫЙ РАЙОН: ВСЕ</span>
+                <div id="stat-items" style="font-size: 13px; color: #38bdf8; font-weight: 600;">0 товаров</div>
+            </div>
+            <canvas id="districtChart" style="max-height: 130px;"></canvas>
+        </div>
+
+        <a href='/' class='logout' style='margin-top: 8px; text-decoration: none;'>Выйти</a>
+
+        <script>
+            const monthlyData = [
+                { month: 'Янв', usd: 0, ltc: 0 },
+                { month: 'Фев', usd: 0, ltc: 0 },
+                { month: 'Мар', usd: 0, ltc: 0 },
+                { month: 'Апр', usd: 0, ltc: 0 },
+                { month: 'Май', usd: 0, ltc: 0 },
+                { month: 'Июн', usd: 0, ltc: 0 }
+            ];
+
+            const ctxIncome = document.getElementById('incomeChart').getContext('2d');
+            new Chart(ctxIncome, {
+                type: 'line',
+                data: {
+                    labels: monthlyData.map(d => d.month),
+                    datasets: [{
+                        data: monthlyData.map(d => d.usd),
+                        borderColor: '#38bdf8',
+                        backgroundColor: 'rgba(56, 189, 248, 0.15)',
+                        borderWidth: 2,
+                        pointBackgroundColor: '#ffffff',
+                        pointRadius: 4,
+                        fill: true,
+                        tension: 0.35
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 9 } } },
+                        y: { grid: { color: 'rgba(255, 255, 255, 0.05)' }, ticks: { color: '#94a3b8', font: { size: 9 } } }
+                    }
+                }
+            });
+
+            const districtsLabels = __DISTRICTS_LABELS__;
+            const districtsItems = __DISTRICTS_ITEMS__;
+
+            const ctxDistrict = document.getElementById('districtChart').getContext('2d');
+            new Chart(ctxDistrict, {
+                type: 'bar',
+                data: {
+                    labels: districtsLabels,
+                    datasets: [{
+                        data: districtsItems,
+                        backgroundColor: 'rgba(56, 189, 248, 0.6)',
+                        borderColor: '#38bdf8',
+                        borderWidth: 1,
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 9 } } },
+                        y: { grid: { color: 'rgba(255, 255, 255, 0.05)' }, ticks: { color: '#94a3b8', font: { size: 9 } } }
+                    }
+                }
+            });
+        </script>
+    """
+    
+    import json
+    labels_json = json.dumps(labels, ensure_ascii=False)
+    items_json = json.dumps(items_data, ensure_ascii=False)
+    
+    final_content = dashboard_content.replace("__BOT_NAME__", bot_name).replace("__DISTRICTS_LABELS__", labels_json).replace("__DISTRICTS_ITEMS__", items_json)
+    return get_page(final_content, "STELLA SYSTEM - DASHBOARD", show_intro=intro, show_full_nav=True)
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
