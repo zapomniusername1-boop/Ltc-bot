@@ -15,43 +15,11 @@ DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stella.db")
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS config (
-            key TEXT PRIMARY KEY,
-            value TEXT
-        )
-    """)
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS cities (
-            name TEXT PRIMARY KEY
-        )
-    """)
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS districts (
-            city TEXT,
-            district TEXT PRIMARY KEY,
-            items INTEGER DEFAULT 0,
-            usd REAL DEFAULT 0,
-            ltc REAL DEFAULT 0
-        )
-    """)
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS categories (
-            name TEXT PRIMARY KEY
-        )
-    """)
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS products (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            category TEXT,
-            city TEXT,
-            district TEXT,
-            name TEXT,
-            price REAL,
-            product_link TEXT,
-            photo_link TEXT
-        )
-    """)
+    cursor.execute("CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT)")
+    cursor.execute("CREATE TABLE IF NOT EXISTS cities (name TEXT PRIMARY KEY)")
+    cursor.execute("CREATE TABLE IF NOT EXISTS districts (city TEXT, district TEXT PRIMARY KEY, items INTEGER DEFAULT 0, usd REAL DEFAULT 0, ltc REAL DEFAULT 0)")
+    cursor.execute("CREATE TABLE IF NOT EXISTS categories (name TEXT PRIMARY KEY)")
+    cursor.execute("CREATE TABLE IF NOT EXISTS products (id INTEGER PRIMARY KEY AUTOINCREMENT, category TEXT, city TEXT, district TEXT, name TEXT, price REAL, product_link TEXT, photo_link TEXT)")
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
@@ -86,7 +54,6 @@ def init_db():
     cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('admin_username', '@stella_admin')")
     cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('admin_id', '777888999')")
     cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('admin_avatar', 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=200&auto=format&fit=crop')")
-    
     conn.commit()
     conn.close()
 
@@ -448,7 +415,7 @@ BASE_TEMPLATE = """<!DOCTYPE html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>__TITLE__</title>
+    <title>STELLA SYSTEM</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root {
@@ -461,102 +428,89 @@ BASE_TEMPLATE = """<!DOCTYPE html>
             --input-bg: rgba(15, 23, 42, 0.8);
             --input-border: rgba(100, 116, 139, 0.3);
         }
-        [data-theme="light"] {
-            --bg-color: #f1f5f9;
-            --bg-gradient: radial-gradient(circle at 50% 30%, #e2e8f0 0%, #cbd5e1 100%);
-            --card-bg: rgba(255, 255, 255, 0.9);
-            --border-color: rgba(2, 132, 199, 0.3);
-            --text-color: #0f172a;
-            --text-muted: #475569;
-            --input-bg: rgba(255, 255, 255, 0.95);
-            --input-border: rgba(100, 116, 139, 0.3);
-        }
-        * { box-sizing: border-box; margin: 0; padding: 0; transition: background 0.3s, color 0.3s; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
         body { 
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
             background: var(--bg-color); background-image: var(--bg-gradient); color: var(--text-color); 
-            display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 100vh; padding: 20px; overflow-x: hidden;
+            display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 100vh; padding: 20px;
         }
         .header-container { width: 100%; max-width: 420px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
         .header-title h1 { font-size: 16px; letter-spacing: 3px; font-weight: 600; color: #38bdf8; }
         .header-title p { font-size: 10px; letter-spacing: 2px; color: var(--text-muted); }
         .menu-btn { background: var(--card-bg); border: 1px solid var(--border-color); color: var(--text-color); padding: 8px 10px; border-radius: 8px; cursor: pointer; font-size: 16px; }
-        .sidebar { position: fixed; top: 0; left: -280px; width: 280px; height: 100%; background: var(--card-bg); backdrop-filter: blur(20px); border-right: 1px solid var(--border-color); z-index: 1000; padding: 24px; transition: left 0.3s ease; overflow-y: auto; display: flex; flex-direction: column; justify-content: space-between; }
+        .sidebar { position: fixed; top: 0; left: -280px; width: 280px; height: 100%; background: var(--card-bg); border-right: 1px solid var(--border-color); z-index: 1000; padding: 24px; transition: left 0.3s ease; display: flex; flex-direction: column; justify-content: space-between; }
         .sidebar.open { left: 0; }
         .sidebar-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-        .sidebar-menu a { display: block; color: var(--text-color); text-decoration: none; padding: 10px 0; border-bottom: 1px solid var(--input-border); font-size: 14px; font-weight: 500; }
+        .sidebar-menu a { display: block; color: var(--text-color); text-decoration: none; padding: 10px 0; border-bottom: 1px solid var(--input-border); font-size: 14px; }
         .sidebar-menu a:hover { color: #38bdf8; }
         .admin-profile { background: var(--input-bg); border: 1px solid var(--border-color); padding: 12px; border-radius: 12px; display: flex; align-items: center; gap: 12px; margin-top: 15px; }
         .admin-avatar { width: 42px; height: 42px; border-radius: 50%; object-fit: cover; border: 1px solid #38bdf8; }
-        .admin-info h4 { font-size: 13px; font-weight: 600; color: var(--text-color); }
+        .admin-info h4 { font-size: 13px; font-weight: 600; }
         .admin-info p { font-size: 11px; color: #38bdf8; }
-        .admin-info span { font-size: 10px; color: var(--text-muted); display: block; }
-        .theme-toggle { background: var(--card-bg); border: 1px solid var(--border-color); color: var(--text-color); padding: 6px 10px; border-radius: 8px; cursor: pointer; font-size: 12px; font-weight: 600; }
-        .card { background: var(--card-bg); backdrop-filter: blur(16px); border: 1px solid var(--border-color); padding: 20px; border-radius: 20px; width: 100%; max-width: 420px; box-shadow: 0 0 30px rgba(14, 165, 233, 0.15); }
+        .admin-info span { font-size: 10px; color: var(--text-muted); }
+        .card { background: var(--card-bg); border: 1px solid var(--border-color); padding: 20px; border-radius: 20px; width: 100%; max-width: 420px; box-shadow: 0 0 30px rgba(14, 165, 233, 0.15); }
         input, select, textarea { width: 100%; padding: 13px; margin-bottom: 12px; border-radius: 10px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-color); font-size: 14px; outline: none; }
-        button[type="submit"] { width: 100%; padding: 13px; margin-top: 4px; border-radius: 10px; border: none; background: linear-gradient(135deg, #0284c7, #0369a1); color: #fff; font-size: 15px; font-weight: 600; cursor: pointer; }
+        button[type="submit"] { width: 100%; padding: 13px; margin-top: 4px; border-radius: 10px; border: none; background: #0284c7; color: #fff; font-size: 15px; font-weight: 600; cursor: pointer; }
         .logout { background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); margin-top: 12px; text-align: center; display: block; text-decoration: none; padding: 11px; border-radius: 10px; color: #fca5a5; font-weight: 600; font-size: 14px; }
     </style>
 </head>
-<body data-theme="dark">
-    __HEADER__
-    __SIDEBAR__
-    <div class="card">__CONTENT__</div>
+<body>
+    REPLACE_HEADER
+    REPLACE_SIDEBAR
+    <div class="card">REPLACE_CONTENT</div>
     <script>
         function toggleSidebar() { document.getElementById('sidebar').classList.toggle('open'); }
-        function toggleTheme() {
-            const body = document.body;
-            const newTheme = body.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
-            body.setAttribute('data-theme', newTheme);
-            localStorage.setItem('stella_theme', newTheme);
-        }
-        document.body.setAttribute('data-theme', localStorage.getItem('stella_theme') || 'dark');
     </script>
 </body>
 </html>"""
 
-def get_page(content: str, title: str = "STELLA SYSTEM", show_full_nav: bool = False) -> str:
-    header_html = """
-    <div class="header-container">
-        <button class="menu-btn" onclick="toggleSidebar()">☰</button>
-        <div class="header-title" style="text-align: center;"><h1>STELLA SYSTEM</h1><p>CONTROL SYSTEM</p></div>
-        <button class="theme-toggle" onclick="toggleTheme()">🌓</button>
-    </div>
-    """ if show_full_nav else """
-    <div class="header-container" style="justify-content: center; position: relative;">
-        <div class="header-title" style="text-align: center;"><h1>STELLA SYSTEM</h1><p>ACCESS PORTAL</p></div>
-        <button class="theme-toggle" onclick="toggleTheme()" style="position: absolute; right: 0; top: 0;">🌓</button>
-    </div>
-    """
-    
-    sidebar_html = f"""
-    <div id="sidebar" class="sidebar">
-        <div>
-            <div class="sidebar-header"><h3>Управление</h3><button class="menu-btn" onclick="toggleSidebar()">✕</button></div>
-            <div class="sidebar-menu">
-                <a href="/dashboard">📊 Дашборд</a>
-                <a href="/bot-settings">🤖 Настройки бота</a>
-                <a href="/bot-messages">💬 Сообщения бота</a>
-                <a href="/clients">👥 Клиентская база</a>
-                <a href="/cities">🏙️ Города</a>
-                <a href="/districts">📍 Районы</a>
-                <a href="/categories">📂 Категории</a>
-                <a href="/products">📦 Товары</a>
-                <a href="/" style="color: #fca5a5;">🚪 Выход</a>
+def get_page(content: str, show_full_nav: bool = False) -> str:
+    if show_full_nav:
+        header_html = """
+        <div class="header-container">
+            <button class="menu-btn" onclick="toggleSidebar()">☰</button>
+            <div class="header-title" style="text-align: center;"><h1>STELLA SYSTEM</h1><p>CONTROL SYSTEM</p></div>
+            <div style="width: 36px;"></div>
+        </div>
+        """
+        sidebar_html = f"""
+        <div id="sidebar" class="sidebar">
+            <div>
+                <div class="sidebar-header"><h3>Управление</h3><button class="menu-btn" onclick="toggleSidebar()">✕</button></div>
+                <div class="sidebar-menu">
+                    <a href="/dashboard">📊 Дашборд</a>
+                    <a href="/bot-settings">🤖 Настройки бота</a>
+                    <a href="/bot-messages">💬 Сообщения бота</a>
+                    <a href="/clients">👥 Клиентская база</a>
+                    <a href="/cities">🏙️ Города</a>
+                    <a href="/districts">📍 Районы</a>
+                    <a href="/categories">📂 Категории</a>
+                    <a href="/products">📦 Товары</a>
+                    <a href="/" style="color: #fca5a5;">🚪 Выход</a>
+                </div>
+            </div>
+            <div class="admin-profile">
+                <img src="{get_config('admin_avatar')}" alt="Avatar" class="admin-avatar">
+                <div class="admin-info">
+                    <h4>{get_config('admin_name')}</h4>
+                    <p>{get_config('admin_username')}</p>
+                    <span>ID: {get_config('admin_id')}</span>
+                </div>
             </div>
         </div>
-        <div class="admin-profile">
-            <img src="{get_config('admin_avatar')}" alt="Avatar" class="admin-avatar">
-            <div class="admin-info">
-                <h4>{get_config('admin_name')}</h4>
-                <p>{get_config('admin_username')}</p>
-                <span>ID: {get_config('admin_id')}</span>
-            </div>
+        """
+    else:
+        header_html = """
+        <div class="header-container" style="justify-content: center;">
+            <div class="header-title" style="text-align: center;"><h1>STELLA SYSTEM</h1><p>ACCESS PORTAL</p></div>
         </div>
-    </div>
-    """ if show_full_nav else ""
+        """
+        sidebar_html = ""
 
-    return BASE_TEMPLATE.replace("__TITLE__", title).replace("__CONTENT__", content).replace("__HEADER__", header_html).replace("__SIDEBAR__", sidebar_html)
+    page = BASE_TEMPLATE.replace("REPLACE_HEADER", header_html)
+    page = page.replace("REPLACE_SIDEBAR", sidebar_html)
+    page = page.replace("REPLACE_CONTENT", content)
+    return page
 
 @app.get("/", response_class=HTMLResponse)
 async def index():
@@ -566,7 +520,7 @@ async def index():
             <button type="submit">Войти</button>
         </form>
     """
-    return get_page(content, "STELLA SYSTEM - LOGIN", show_full_nav=False)
+    return get_page(content, show_full_nav=False)
 
 @app.post("/verify-pin", response_class=HTMLResponse)
 async def verify_pin(pin_code: str = Form(...)):
@@ -669,7 +623,7 @@ async def dashboard_get():
             });
         </script>
     """
-    return get_page(dashboard_content, "DASHBOARD", show_full_nav=True)
+    return get_page(dashboard_content, show_full_nav=True)
 
 @app.get("/clients", response_class=HTMLResponse)
 async def clients_page():
@@ -697,7 +651,7 @@ async def clients_page():
         <div style="max-height: 280px; overflow-y: auto; margin-bottom: 14px;">{list_html}</div>
         <a href='/dashboard' class='logout' style='background: #0284c7; color: #fff; border: none; text-decoration: none;'>← В дашборд</a>
     """
-    return get_page(content, "CLIENTS", show_full_nav=True)
+    return get_page(content, show_full_nav=True)
 
 @app.get("/bot-settings", response_class=HTMLResponse)
 async def bot_settings_page():
@@ -712,7 +666,7 @@ async def bot_settings_page():
         </form>
         <a href='/dashboard' class='logout' style='background: #0284c7; color: #fff; border: none; text-decoration: none;'>← В дашборд</a>
     """
-    return get_page(content, "BOT SETTINGS", show_full_nav=True)
+    return get_page(content, show_full_nav=True)
 
 @app.post("/update-bot", response_class=HTMLResponse)
 async def update_bot(request: Request, bot_name: str = Form(...), bot_token: str = Form(...)):
@@ -738,7 +692,7 @@ async def bot_messages_page():
         </form>
         <a href='/dashboard' class='logout' style='background: #0284c7; color: #fff; border: none; text-decoration: none;'>Назад</a>
     """
-    return get_page(content, "MESSAGES", show_full_nav=True)
+    return get_page(content, show_full_nav=True)
 
 @app.post("/update-bot-messages", response_class=HTMLResponse)
 async def update_bot_messages(welcome_msg: str = Form(...), onetime_msg: str = Form(...)):
@@ -763,7 +717,7 @@ async def cities_page():
         <div>{list_html}</div>
         <a href='/dashboard' class='logout' style='background: #0284c7; color: #fff; border: none; text-decoration: none;'>Назад</a>
     """
-    return get_page(content, "CITIES", show_full_nav=True)
+    return get_page(content, show_full_nav=True)
 
 @app.post("/add-city", response_class=HTMLResponse)
 async def add_city(city_name: str = Form(...)):
@@ -795,7 +749,7 @@ async def districts_page():
         <div>{list_html}</div>
         <a href='/dashboard' class='logout' style='background: #0284c7; color: #fff; border: none; text-decoration: none;'>Назад</a>
     """
-    return get_page(content, "DISTRICTS", show_full_nav=True)
+    return get_page(content, show_full_nav=True)
 
 @app.post("/add-district", response_class=HTMLResponse)
 async def add_district(city: str = Form(...), district_name: str = Form(...)):
@@ -823,7 +777,7 @@ async def categories_page():
         <div>{list_html}</div>
         <a href='/dashboard' class='logout' style='background: #0284c7; color: #fff; border: none; text-decoration: none;'>Назад</a>
     """
-    return get_page(content, "CATEGORIES", show_full_nav=True)
+    return get_page(content, show_full_nav=True)
 
 @app.post("/add-category", response_class=HTMLResponse)
 async def add_category(category_name: str = Form(...)):
@@ -867,7 +821,7 @@ async def products_page():
         <div>{list_html}</div>
         <a href='/dashboard' class='logout' style='background: #0284c7; color: #fff; border: none; text-decoration: none;'>Назад</a>
     """
-    return get_page(content, "PRODUCTS", show_full_nav=True)
+    return get_page(content, show_full_nav=True)
 
 @app.post("/add-product", response_class=HTMLResponse)
 async def add_product(category: str = Form(...), city: str = Form(...), district: str = Form(...), product_name: str = Form(...), price: float = Form(...), product_link: str = Form("")):
