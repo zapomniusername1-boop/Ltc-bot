@@ -1,4 +1,4 @@
-import os
+тоimport os
 import sqlite3
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -449,4 +449,4 @@ BASE_TEMPLATE = """<!DOCTYPE html>
         }
 
         #status-popup {
-            display: none; position: fixed; top: 0; left: 0; width: 100%
+            display: none; position: fixed; top: 0; left: 0; width: 100% """
