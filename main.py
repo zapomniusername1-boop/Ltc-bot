@@ -328,7 +328,7 @@ async def telegram_webhook(request: Request):
                             })
                             return
 
-                        keyboard = {"inline_keyboard": [[{"text": f"📍 {d}", "callback_data": f"dist_{d}"}]] for d in districts]}
+                        keyboard = {"inline_keyboard": [[{"text": f"📍 {d}", "callback_data": f"dist_{d}"}]] for d in districts}
                         await client.post(f"{api_url}/sendMessage", json={
                             "chat_id": chat_id,
                             "text": f"Город: <b>{selected_city}</b>. Выберите район:",
@@ -349,7 +349,7 @@ async def telegram_webhook(request: Request):
                             })
                             return
 
-                        keyboard = {"inline_keyboard": [[{"text": f"📂 {cat}", "callback_data": f"cat_{selected_district}_{cat}"}]] for cat in categories]}
+                        keyboard = {"inline_keyboard": [[{"text": f"📂 {cat}", "callback_data": f"cat_{selected_district}_{cat}"}]] for cat in categories}
                         await client.post(f"{api_url}/sendMessage", json={
                             "chat_id": chat_id,
                             "text": f"Район: <b>{selected_district}</b>. Выберите категорию:",
@@ -378,7 +378,7 @@ async def telegram_webhook(request: Request):
                             })
                             return
 
-                        keyboard = {"inline_keyboard": [[{"text": f"📦 {p[0]} — ${p[1]}", "callback_data": f"buy_{p[0]}"}]] for p in products]}
+                        keyboard = {"inline_keyboard": [[{"text": f"📦 {p[0]} — ${p[1]}", "callback_data": f"buy_{p[0]}"}]] for p in products}
                         await client.post(f"{api_url}/sendMessage", json={
                             "chat_id": chat_id,
                             "text": f"Категория: <b>{selected_cat}</b>. Выберите товар:",
