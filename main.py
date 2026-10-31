@@ -9,7 +9,7 @@ app = FastAPI()
 
 SECRET_PIN = "7777"
 
-# Инициализация базы данных SQLite
+# Инициализация базы данных SQLite (безопасная для сохранения данных)
 def init_db():
     conn = sqlite3.connect("stella.db")
     cursor = conn.cursor()
@@ -50,7 +50,6 @@ def init_db():
             photo_link TEXT
         )
     """)
-    # Таблица клиентов с полем для аватарки
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
@@ -62,10 +61,17 @@ def init_db():
     """)
     conn.commit()
     
+    # Значения по умолчанию устанавливаются только если их еще нет
     cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('bot_name', 'Не привязан')")
     cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('bot_token', '')")
     cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('welcome_msg', 'Добро пожаловать в STELLA SYSTEM! Выберите город для покупки:')")
     cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('onetime_msg', 'Оплата прошла успешно! Вот ваш товар:')")
+    
+    cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('admin_name', 'Admin Stella')")
+    cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('admin_username', '@stella_admin')")
+    cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('admin_id', '777888999')")
+    cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('admin_avatar', 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=200&auto=format&fit=crop')")
+    
     conn.commit()
     conn.close()
 
@@ -86,19 +92,16 @@ def set_config(key: str, value: str):
     conn.commit()
     conn.close()
 
-# Функция для получения актуальной ссылки на аватарку пользователя из Telegram
+# Функция для получения аватарки пользователя
 async def fetch_user_avatar(token: str, user_id: int) -> str:
     default_avatar = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=200&auto=format&fit=crop"
     try:
         async with httpx.AsyncClient() as client:
-            # Запрашиваем список фото профиля пользователя
             photos_res = await client.get(f"https://api.telegram.org/bot{token}/getUserProfilePhotos", params={"user_id": user_id, "limit": 1})
             photos_data = photos_res.json()
             
             if photos_data.get("ok") and photos_data["result"]["total_count"] > 0:
                 file_id = photos_data["result"]["photos"][0][-1]["file_id"]
-                
-                # Получаем путь к файлу на серверах Telegram
                 file_res = await client.get(f"https://api.telegram.org/bot{token}/getFile", params={"file_id": file_id})
                 file_data = file_res.json()
                 
@@ -129,10 +132,8 @@ async def telegram_webhook(request: Request):
             username = user.get("username", "нет")
             full_name = f"{user.get('first_name', '')} {user.get('last_name', '')}".strip()
             
-            # Получаем аватарку через Telegram API
             avatar_url = await fetch_user_avatar(token, user_id)
 
-            # Сохраняем или обновляем клиента в базе
             conn = sqlite3.connect("stella.db")
             cursor = conn.cursor()
             cursor.execute("""
@@ -366,15 +367,27 @@ BASE_TEMPLATE = """<!DOCTYPE html>
             position: fixed; top: 0; left: -280px; width: 280px; height: 100%;
             background: var(--card-bg); backdrop-filter: blur(20px);
             border-right: 1px solid var(--border-color); z-index: 1000; padding: 24px;
-            transition: left 0.3s ease; overflow-y: auto;
+            transition: left 0.3s ease; overflow-y: auto; display: flex; flex-direction: column; justify-content: space-between;
         }
         .sidebar.open { left: 0; }
-        .sidebar-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+        .sidebar-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
         .sidebar-menu a {
-            display: block; color: var(--text-color); text-decoration: none; padding: 12px 0;
+            display: block; color: var(--text-color); text-decoration: none; padding: 10px 0;
             border-bottom: 1px solid var(--input-border); font-size: 14px; font-weight: 500;
         }
         .sidebar-menu a:hover { color: #38bdf8; }
+
+        .admin-profile {
+            background: var(--input-bg); border: 1px solid var(--border-color); padding: 12px;
+            border-radius: 12px; display: flex; align-items: center; gap: 12px; margin-top: 15px;
+        }
+        .admin-avatar {
+            width: 42px; height: 42px; border-radius: 50%; object-fit: cover;
+            border: 1px solid #38bdf8;
+        }
+        .admin-info h4 { font-size: 13px; font-weight: 600; color: var(--text-color); }
+        .admin-info p { font-size: 11px; color: #38bdf8; }
+        .admin-info span { font-size: 10px; color: var(--text-muted); display: block; }
 
         .theme-toggle {
             background: var(--card-bg); border: 1px solid var(--border-color); color: var(--text-color);
@@ -502,22 +515,38 @@ def get_page(content: str, title: str = "STELLA SYSTEM", show_intro: bool = Fals
             <button class="theme-toggle" onclick="toggleTheme()">🌓</button>
         </div>
         """
-        sidebar_html = """
+        
+        adm_name = get_config("admin_name")
+        adm_user = get_config("admin_username")
+        adm_id = get_config("admin_id")
+        adm_avatar = get_config("admin_avatar")
+
+        sidebar_html = f"""
         <div id="sidebar" class="sidebar">
-            <div class="sidebar-header">
-                <h3>Управление</h3>
-                <button class="menu-btn" onclick="toggleSidebar()">✕</button>
+            <div>
+                <div class="sidebar-header">
+                    <h3>Управление</h3>
+                    <button class="menu-btn" onclick="toggleSidebar()">✕</button>
+                </div>
+                <div class="sidebar-menu">
+                    <a href="/dashboard">📊 Статистика и Графика</a>
+                    <a href="/bot-settings">🤖 Настройки бота</a>
+                    <a href="/bot-messages">💬 Сообщения бота</a>
+                    <a href="/clients">👥 Клиентская база</a>
+                    <a href="/cities">🏙️ Управление городами</a>
+                    <a href="/districts">📍 Управление районами</a>
+                    <a href="/categories">📂 Категории</a>
+                    <a href="/products">📦 Товары и выдача</a>
+                    <a href="/" style="color: #fca5a5;">🚪 Выход</a>
+                </div>
             </div>
-            <div class="sidebar-menu">
-                <a href="/dashboard">📊 Статистика и Графика</a>
-                <a href="/bot-settings">🤖 Настройки бота</a>
-                <a href="/bot-messages">💬 Сообщения бота</a>
-                <a href="/clients">👥 Клиентская база</a>
-                <a href="/cities">🏙️ Управление городами</a>
-                <a href="/districts">📍 Управление районами</a>
-                <a href="/categories">📂 Категории</a>
-                <a href="/products">📦 Товары и выдача</a>
-                <a href="/" style="color: #fca5a5;">🚪 Выход</a>
+            <div class="admin-profile">
+                <img src="{adm_avatar}" alt="Avatar" class="admin-avatar">
+                <div class="admin-info">
+                    <h4>{adm_name}</h4>
+                    <p>{adm_user}</p>
+                    <span>ID: {adm_id}</span>
+                </div>
             </div>
         </div>
         """
@@ -572,7 +601,6 @@ async def check_pin(pin_code: str = Form(...)):
 async def dashboard_get():
     return await render_main_dashboard(intro=False)
 
-# РАЗДЕЛ КЛИЕНТСКОЙ БАЗЫ С АВАТАРКАМИ
 @app.get("/clients", response_class=HTMLResponse)
 async def clients_page():
     conn = sqlite3.connect("stella.db")
@@ -746,7 +774,7 @@ async def add_city(city_name: str = Form(...)):
         conn = sqlite3.connect("stella.db")
         cursor = conn.cursor()
         try:
-            cursor.execute("INSERT INTO cities (name) VALUES (?)", (city_name,))
+            cursor.execute("INSERT OR IGNORE INTO cities (name) VALUES (?)", (city_name,))
             conn.commit()
             conn.close()
             return RedirectResponse(url="/cities?status=success", status_code=303)
@@ -816,7 +844,7 @@ async def add_district(city: str = Form(...), district_name: str = Form(...)):
         conn = sqlite3.connect("stella.db")
         cursor = conn.cursor()
         try:
-            cursor.execute("INSERT INTO districts (city, district) VALUES (?, ?)", (city, district_name))
+            cursor.execute("INSERT OR IGNORE INTO districts (city, district) VALUES (?, ?)", (city, district_name))
             conn.commit()
             conn.close()
             return RedirectResponse(url="/districts?status=success", status_code=303)
@@ -874,7 +902,7 @@ async def add_category(category_name: str = Form(...)):
         conn = sqlite3.connect("stella.db")
         cursor = conn.cursor()
         try:
-            cursor.execute("INSERT INTO categories (name) VALUES (?)", (category_name,))
+            cursor.execute("INSERT OR IGNORE INTO categories (name) VALUES (?)", (category_name,))
             conn.commit()
             conn.close()
             return RedirectResponse(url="/categories?status=success", status_code=303)
