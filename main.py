@@ -18,7 +18,20 @@ def init_db():
     cursor.execute("CREATE TABLE IF NOT EXISTS cities (name TEXT PRIMARY KEY)")
     cursor.execute("CREATE TABLE IF NOT EXISTS districts (city TEXT, district TEXT PRIMARY KEY, items INTEGER DEFAULT 0, usd REAL DEFAULT 0, ltc REAL DEFAULT 0)")
     cursor.execute("CREATE TABLE IF NOT EXISTS categories (name TEXT PRIMARY KEY)")
-    cursor.execute("CREATE TABLE IF NOT EXISTS products (id INTEGER PRIMARY KEY AUTOINCREMENT, category TEXT, city TEXT, district TEXT, name TEXT, price REAL, product_link TEXT, photo_link TEXT)")
+    # Добавили колонку stock (количество штук) в таблицу товаров
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS products (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, 
+            category TEXT, 
+            city TEXT, 
+            district TEXT, 
+            name TEXT, 
+            price REAL, 
+            stock INTEGER DEFAULT 1,
+            product_link TEXT, 
+            photo_link TEXT
+        )
+    """)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
@@ -177,7 +190,7 @@ async def telegram_webhook(request: Request):
                         pass
 
                     if callback_data.startswith("captcha_"):
-                        cursor.execute("UPDATE users SET is_verified = 1 WHERE user_id = ?", (chat_id,))
+                        cursor.execute("UPDATE users SET is_verified = 1 WHERE user_id = ?", (user_id,))
                         conn.commit()
                         conn.close()
                         
@@ -366,19 +379,20 @@ async def telegram_webhook(request: Request):
                         selected_district = parts[0]
                         selected_cat = parts[1]
 
-                        cursor.execute("SELECT name, price FROM products WHERE district = ? AND category = ?", (selected_district, selected_cat))
+                        # Показываем только те товары, у которых stock > 0
+                        cursor.execute("SELECT name, price, stock FROM products WHERE district = ? AND category = ? AND stock > 0", (selected_district, selected_cat))
                         products = cursor.fetchall()
                         conn.close()
 
                         if not products:
                             await client.post(f"{api_url}/sendMessage", json={
                                 "chat_id": chat_id,
-                                "text": f"📦 В этой категории пока нет товаров.",
+                                "text": f"📦 В этой категории пока нет товаров в наличии.",
                                 "parse_mode": "HTML"
                             })
                             return
 
-                        keyboard = {"inline_keyboard": [[{"text": f"📦 {p[0]} — ${p[1]}", "callback_data": f"buy_{p[0]}"}]] for p in products}
+                        keyboard = {"inline_keyboard": [[{"text": f"📦 {p[0]} — ${p[1]} (Остаток: {p[2]} шт.)", "callback_data": f"buy_{p[0]}"}]] for p in products}
                         await client.post(f"{api_url}/sendMessage", json={
                             "chat_id": chat_id,
                             "text": f"Категория: <b>{selected_cat}</b>. Выберите товар:",
@@ -388,26 +402,40 @@ async def telegram_webhook(request: Request):
 
                     elif callback_data.startswith("buy_"):
                         prod_name = callback_data.replace("buy_", "").strip()
-                        cursor.execute("SELECT name, price, product_link, photo_link, district FROM products WHERE name = ?", (prod_name,))
+                        
+                        # Находим товар по имени
+                        cursor.execute("SELECT id, name, price, product_link, photo_link, district, stock FROM products WHERE name = ?", (prod_name,))
                         product = cursor.fetchone()
 
                         if product:
+                            prod_id, p_name, p_price, p_link, p_photo, p_dist, p_stock = product
+                            
+                            # Записываем покупку
                             cursor.execute("INSERT INTO purchases (user_id, product_name, price, district) VALUES (?, ?, ?, ?)", 
-                                           (chat_id, product[0], product[1], product[4]))
-                            cursor.execute("UPDATE districts SET items = items + 1 WHERE district = ?", (product[4],))
+                                           (chat_id, p_name, p_price, p_dist))
+                            cursor.execute("UPDATE districts SET items = items + 1 WHERE district = ?", (p_dist,))
+                            
+                            # Уменьшаем количество товара на складе (stock)
+                            new_stock = p_stock - 1
+                            if new_stock > 0:
+                                cursor.execute("UPDATE products SET stock = ? WHERE id = ?", (new_stock, prod_id))
+                            else:
+                                # Если товар закончился — удаляем его полностью из базы
+                                cursor.execute("DELETE FROM products WHERE id = ?", (prod_id,))
+                                
                             conn.commit()
                         conn.close()
 
                         if product:
                             onetime_msg = get_config("onetime_msg")
-                            delivery_text = f"{onetime_msg}\n\n<b>{product[0]}</b>\nЦена: ${product[1]}\n"
-                            if product[2]:
-                                delivery_text += f"🔗 Ссылка: {product[2]}"
-
+                            delivery_text = f"{onetime_msg}\n\n<b>{product[1]}</b>\nЦена: ${product[2]}\n"
                             if product[3]:
+                                delivery_text += f"🔗 Ссылка: {product[3]}"
+
+                            if product[4]:
                                 await client.post(f"{api_url}/sendPhoto", json={
                                     "chat_id": chat_id,
-                                    "photo": product[3],
+                                    "photo": product[4],
                                     "caption": delivery_text,
                                     "parse_mode": "HTML"
                                 })
@@ -417,6 +445,11 @@ async def telegram_webhook(request: Request):
                                     "text": delivery_text,
                                     "parse_mode": "HTML"
                                 })
+                        else:
+                            await client.post(f"{api_url}/sendMessage", json={
+                                "chat_id": chat_id,
+                                "text": "⚠️ Извините, этот товар только что закончился!"
+                            })
 
     except Exception as e:
         print(f"Webhook error: {e}")
@@ -832,7 +865,7 @@ async def update_bot(request: Request, bot_name: str = Form(...), bot_token: str
         set_config("bot_token", bot_token)
         host_url = str(request.base_url).rstrip('/')
         async with httpx.AsyncClient() as client:
-            await client.get(f"https://api.telegram.org/bot{bot_token}/setWebhook?url={host_url}/webhook")
+            await client.get(f"https://api.telegram.org/bot{bot_token}/setWebhook?url={host_url}/webhook&allowed_updates=[\"message\",\"callback_query\"]")
         return RedirectResponse(url="/bot-settings", status_code=303)
     return RedirectResponse(url="/bot-settings", status_code=303)
 
@@ -982,40 +1015,42 @@ async def products_page(request: Request):
     cities = [row[0] for row in cursor.fetchall()]
     cursor.execute("SELECT district, city FROM districts")
     districts = cursor.fetchall()
-    cursor.execute("SELECT name, price, district FROM products")
+    # Выводим товары вместе с их остатком (stock)
+    cursor.execute("SELECT name, price, district, stock FROM products")
     products = cursor.fetchall()
     conn.close()
 
     cat_options = "".join([f'<option value="{c}">{c}</option>' for c in categories])
     city_options = "".join([f'<option value="{c}">{c}</option>' for c in cities])
     district_options = "".join([f'<option value="{d[0]}">{d[0]} ({d[1]})</option>' for d in districts])
-    list_html = "".join([f'<div>📦 {p[0]} - ${p[1]} ({p[2]})</div>' for p in products]) or 'Нет товаров'
+    list_html = "".join([f'<div>📦 {p[0]} — ${p[1]} | Район: {p[2]} | <b style="color: #4ade80;">{p[3]} шт.</b></div>' for p in products]) or 'Нет товаров'
 
     content = f"""
-        <h2>Товары</h2>
+        <h2>Управление товарами</h2>
         <form method="POST" action="/add-product">
             <select name="category" required><option value="" disabled selected>Категория</option>{cat_options}</select>
             <select name="city" required><option value="" disabled selected>Город</option>{city_options}</select>
             <select name="district" required><option value="" disabled selected>Район</option>{district_options}</select>
-            <input type="text" name="product_name" placeholder="Название" required>
+            <input type="text" name="product_name" placeholder="Название товара" required>
             <input type="number" step="0.01" name="price" placeholder="Цена ($)" required>
-            <input type="url" name="product_link" placeholder="Ссылка выдачи">
-            <button type="submit">Добавить</button>
+            <input type="number" name="stock" placeholder="Количество (сколько штук доступно)" value="1" min="1" required>
+            <input type="url" name="product_link" placeholder="Ссылка выдачи после покупки">
+            <button type="submit">Добавить товар</button>
         </form>
-        <div>{list_html}</div>
-        <a href='/dashboard' class='logout' style='background: #0284c7; color: #fff; border: none; text-decoration: none;'>Назад</a>
+        <div style="margin-top: 15px;">{list_html}</div>
+        <a href='/dashboard' class='logout' style='background: #0284c7; color: #fff; border: none; text-decoration: none;'>Назад в дашборд</a>
     """
     return get_page(content, show_full_nav=True)
 
 @app.post("/add-product", response_class=HTMLResponse)
-async def add_product(request: Request, category: str = Form(...), city: str = Form(...), district: str = Form(...), product_name: str = Form(...), price: float = Form(...), product_link: str = Form("")):
+async def add_product(request: Request, category: str = Form(...), city: str = Form(...), district: str = Form(...), product_name: str = Form(...), price: float = Form(...), stock: int = Form(1), product_link: str = Form("")):
     if request.cookies.get("auth") != "true":
         return RedirectResponse(url="/", status_code=303)
 
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO products (category, city, district, name, price, product_link) VALUES (?, ?, ?, ?, ?, ?)", 
-                   (category.strip(), city.strip(), district.strip(), product_name.strip(), price, product_link.strip()))
+    cursor.execute("INSERT INTO products (category, city, district, name, price, stock, product_link) VALUES (?, ?, ?, ?, ?, ?, ?)", 
+                   (category.strip(), city.strip(), district.strip(), product_name.strip(), price, stock, product_link.strip()))
     conn.commit()
     conn.close()
     return RedirectResponse(url="/products", status_code=303)
