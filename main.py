@@ -5,6 +5,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 import uvicorn
 import httpx
 import random
+import json
 
 app = FastAPI()
 
@@ -133,6 +134,7 @@ async def telegram_webhook(request: Request):
     try:
         data = await request.json()
         user, chat_id = None, None
+        
         if "message" in data:
             msg = data["message"]
             chat_id = msg["chat"]["id"]
@@ -206,6 +208,7 @@ async def telegram_webhook(request: Request):
                     if callback_data.startswith("captcha_"):
                         cursor.execute("UPDATE users SET is_verified = 1 WHERE user_id = ?", (chat_id,))
                         conn.commit()
+                        conn.close()
                         
                         welcome_msg = get_config("welcome_msg")
                         keyboard = {
@@ -221,28 +224,28 @@ async def telegram_webhook(request: Request):
                             "parse_mode": "HTML",
                             "reply_markup": keyboard
                         })
-                        conn.close()
                         return
 
                     cursor.execute("SELECT is_verified FROM users WHERE user_id = ?", (chat_id,))
                     v_row = cursor.fetchone()
+                    
                     if not v_row or v_row[0] == 0:
+                        conn.close()
                         await client.post(f"{api_url}/sendMessage", json={
                             "chat_id": chat_id,
                             "text": "⚠️ Сначала отправьте /start для прохождения проверки."
                         })
-                        conn.close()
                         return
 
                     if callback_data == "open_catalog":
                         cursor.execute("SELECT name FROM cities")
                         cities = [row[0] for row in cursor.fetchall()]
+                        conn.close()
                         if not cities:
                             await client.post(f"{api_url}/sendMessage", json={
                                 "chat_id": chat_id,
                                 "text": "В данный момент в боте нет доступных городов."
                             })
-                            conn.close()
                             return
                         keyboard = {"inline_keyboard": [[{"text": f"🏙️ {city}", "callback_data": f"city_{city}"}]] for city in cities}
                         await client.post(f"{api_url}/sendMessage", json={
@@ -260,6 +263,8 @@ async def telegram_webhook(request: Request):
 
                         cursor.execute("SELECT COUNT(*), SUM(price) FROM purchases WHERE user_id = ?", (chat_id,))
                         stats = cursor.fetchone()
+                        conn.close()
+                        
                         total_count = stats[0] or 0
                         total_spent = stats[1] or 0.0
 
@@ -296,6 +301,7 @@ async def telegram_webhook(request: Request):
                     elif callback_data == "top_up_ltc":
                         cursor.execute("SELECT ltc_address FROM users WHERE user_id = ?", (chat_id,))
                         row = cursor.fetchone()
+                        conn.close()
                         ltc_addr = row[0] if row else "Адрес не найден"
 
                         topup_text = (
@@ -314,6 +320,7 @@ async def telegram_webhook(request: Request):
                         })
 
                     elif callback_data == "main_menu":
+                        conn.close()
                         keyboard = {
                             "inline_keyboard": [
                                 [{"text": "🏙️ Открыть каталог", "callback_data": "open_catalog"}],
@@ -331,6 +338,7 @@ async def telegram_webhook(request: Request):
                         selected_city = callback_data.replace("city_", "").strip()
                         cursor.execute("SELECT district FROM districts WHERE city = ?", (selected_city,))
                         districts = [row[0] for row in cursor.fetchall()]
+                        conn.close()
 
                         if not districts:
                             await client.post(f"{api_url}/sendMessage", json={
@@ -338,7 +346,6 @@ async def telegram_webhook(request: Request):
                                 "text": f"⚠️ В городе <b>{selected_city}</b> пока нет районов.",
                                 "parse_mode": "HTML"
                             })
-                            conn.close()
                             return
 
                         keyboard = {"inline_keyboard": [[{"text": f"📍 {d}", "callback_data": f"dist_{d}"}] for d in districts]}
@@ -353,13 +360,13 @@ async def telegram_webhook(request: Request):
                         selected_district = callback_data.replace("dist_", "").strip()
                         cursor.execute("SELECT name FROM categories")
                         categories = [row[0] for row in cursor.fetchall()]
+                        conn.close()
                         
                         if not categories:
                             await client.post(f"{api_url}/sendMessage", json={
                                 "chat_id": chat_id,
-                                "text": "⚠️ Категории не настроены."
+                                "text": f"⚠️ Категории не настроены."
                             })
-                            conn.close()
                             return
 
                         keyboard = {"inline_keyboard": [[{"text": f"📂 {cat}", "callback_data": f"cat_{selected_district}_{cat}"}] for cat in categories]}
@@ -381,6 +388,7 @@ async def telegram_webhook(request: Request):
 
                         cursor.execute("SELECT name, price FROM products WHERE district = ? AND category = ?", (selected_district, selected_cat))
                         products = cursor.fetchall()
+                        conn.close()
 
                         if not products:
                             await client.post(f"{api_url}/sendMessage", json={
@@ -388,7 +396,6 @@ async def telegram_webhook(request: Request):
                                 "text": f"📦 В этой категории пока нет товаров.",
                                 "parse_mode": "HTML"
                             })
-                            conn.close()
                             return
 
                         keyboard = {"inline_keyboard": [[{"text": f"📦 {p[0]} — ${p[1]}", "callback_data": f"buy_{p[0]}"}] for p in products]}
@@ -409,7 +416,9 @@ async def telegram_webhook(request: Request):
                                            (chat_id, product[0], product[1], product[4]))
                             cursor.execute("UPDATE districts SET items = items + 1 WHERE district = ?", (product[4],))
                             conn.commit()
+                        conn.close()
 
+                        if product:
                             onetime_msg = get_config("onetime_msg")
                             delivery_text = f"{onetime_msg}\n\n<b>{product[0]}</b>\nЦена: ${product[1]}\n"
                             if product[2]:
@@ -428,14 +437,13 @@ async def telegram_webhook(request: Request):
                                     "text": delivery_text,
                                     "parse_mode": "HTML"
                                 })
-                    conn.close()
 
     except Exception as e:
         print(f"Webhook error: {e}")
         
     return {"ok": True}
 
-# Полный дизайн панели управления с анимациями и графиками
+# Оформление веб-панели управления с графиками Chart.js
 BASE_TEMPLATE = """<!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -569,15 +577,97 @@ async def verify_pin(pin_code: str = Form(...)):
 
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard_get():
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT district, items FROM districts")
+    districts_data = cursor.fetchall()
+    conn.close()
+
+    labels = [d[0] for d in districts_data] if districts_data else ["Нет районов"]
+    items_data = [d[1] for d in districts_data] if districts_data else [0]
     bot_name = get_config("bot_name")
-    content = f"""
-        <div style="text-align:center; margin-bottom: 12px;"><h2>Дашборд</h2></div>
-        <p style="color: #4ade80; text-align:center; margin-bottom: 15px;">🤖 Бот: {bot_name}</p>
-        <a href='/clients' class='logout' style='background: #0284c7; color: #fff; border: none; text-decoration: none; margin-bottom: 10px;'>👥 Клиентская база</a>
-        <a href='/products' class='logout' style='background: #0284c7; color: #fff; border: none; text-decoration: none; margin-bottom: 10px;'>📦 Управление товарами</a>
+
+    dashboard_content = f"""
+        <div style="text-align:center; margin-bottom: 12px;">
+            <p style="color: #38bdf8; font-size: 11px; letter-spacing: 2px; font-weight: 600;">АНАЛИТИКА</p>
+            <h2 style="font-size: 18px; margin-top: 2px;">Дашборд и Графики</h2>
+        </div>
+
+        <div style="background: var(--input-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 10px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-size: 11px; color: var(--text-muted);">Активный бот:</span>
+            <span style="font-size: 12px; color: #4ade80; font-weight: 600;">🤖 {bot_name}</span>
+        </div>
+
+        <div style="background: var(--input-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 10px; margin-bottom: 12px;">
+            <span style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 6px;">Доход по месяцам (USD / LTC):</span>
+            <canvas id="incomeChart" style="max-height: 110px;"></canvas>
+        </div>
+
+        <div style="background: var(--input-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 10px; margin-bottom: 12px;">
+            <div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 6px;">
+                <span style="font-size: 11px; color: var(--text-muted);">Районы (куплено товаров):</span>
+                <a href="/products" style="font-size: 10px; color: #38bdf8; text-decoration: none;">⚙️ Товары</a>
+            </div>
+            <canvas id="districtChart" style="max-height: 110px;"></canvas>
+        </div>
+
         <a href='/' class='logout' style='text-decoration: none;'>Выйти</a>
+
+        <script>
+            const ctxIncome = document.getElementById('incomeChart').getContext('2d');
+            new Chart(ctxIncome, {
+                type: 'line',
+                data: {
+                    labels: ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн'],
+                    datasets: [{
+                        data: [0, 0, 0, 0, 0, 0],
+                        borderColor: '#38bdf8',
+                        backgroundColor: 'rgba(56, 189, 248, 0.15)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.35
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 9 } } },
+                        y: { grid: { color: 'rgba(255, 255, 255, 0.05)' }, ticks: { color: '#94a3b8', font: { size: 9 } } }
+                    }
+                }
+            });
+
+            const districtsLabels = {json.dumps(labels, ensure_ascii=False)};
+            const districtsItems = {json.dumps(items_data, ensure_ascii=False)};
+
+            const ctxDistrict = document.getElementById('districtChart').getContext('2d');
+            new Chart(ctxDistrict, {
+                type: 'bar',
+                data: {
+                    labels: districtsLabels,
+                    datasets: [{
+                        data: districtsItems,
+                        backgroundColor: 'rgba(56, 189, 248, 0.6)',
+                        borderColor: '#38bdf8',
+                        borderWidth: 1,
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 9 } } },
+                        y: { grid: { color: 'rgba(255, 255, 255, 0.05)' }, ticks: { color: '#94a3b8', font: { size: 9 } } }
+                    }
+                }
+            });
+        </script>
     """
-    return get_page(content, "DASHBOARD", show_full_nav=True)
+    return get_page(dashboard_content, "DASHBOARD", show_full_nav=True)
 
 @app.get("/clients", response_class=HTMLResponse)
 async def clients_page():
@@ -605,7 +695,7 @@ async def clients_page():
         <div style="max-height: 280px; overflow-y: auto; margin-bottom: 14px;">{list_html}</div>
         <a href='/dashboard' class='logout' style='background: #0284c7; color: #fff; border: none; text-decoration: none;'>← В дашборд</a>
     """
-    return get_page(content, "CLIENTS", show_full_nav=True)
+    return get_page(content, "CLIENT्स", show_full_nav=True)
 
 @app.get("/bot-settings", response_class=HTMLResponse)
 async def bot_settings_page():
