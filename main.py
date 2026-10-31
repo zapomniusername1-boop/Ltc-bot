@@ -1,11 +1,8 @@
 import os
-import asyncio
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 import uvicorn
-from aiogram import Bot, Dispatcher, types
-from aiogram.enums import ParseMode
-from aiogram.client.default import DefaultBotProperties
+import httpx
 
 app = FastAPI()
 
@@ -18,24 +15,35 @@ CATEGORIES_DB = []
 PRODUCTS_DB = []
 BOT_CONFIG = {"name": "Не привязан", "token": ""}
 
-# Тексты сообщений бота, редактируемые в панели
+# Тексты сообщений бота
 BOT_MESSAGES = {
     "welcome": "Добро пожаловать в STELLA SYSTEM! Выберите город и район для покупки.",
     "onetime": "Оплата прошла успешно! Вот ваш товар:"
 }
 
-# Инициализация Telegram бота (будет обновляться при сохранении токена)
-bot_instance = None
-dp = Dispatcher()
-
-def update_telegram_bot():
-    global bot_instance
-    if BOT_CONFIG["token"]:
-        bot_instance = Bot(token=BOT_CONFIG["token"], default=DefaultBotProperties(parse_mode=ParseMode.HTML))
-
-@dp.message(lambda message: message.text == "/start")
-async def cmd_start(message: types.Message):
-    await message.answer(BOT_MESSAGES["welcome"])
+# Обработка входящих запросов от Telegram (Webhook)
+@app.post("/webhook")
+async def telegram_webhook(request: Request):
+    if not BOT_CONFIG["token"]:
+        return {"ok": True}
+    
+    try:
+        data = await request.json()
+        if "message" in data:
+            chat_id = data["message"]["chat"]["id"]
+            text = data["message"].get("text", "")
+            
+            if text == "/start":
+                telegram_api_url = f"https://api.telegram.org/bot{BOT_CONFIG['token']}/sendMessage"
+                async with httpx.AsyncClient() as client:
+                    await client.post(telegram_api_url, json={
+                        "chat_id": chat_id,
+                        "text": BOT_MESSAGES["welcome"]
+                    })
+    except Exception as e:
+        print(f"Webhook error: {e}")
+        
+    return {"ok": True}
 
 BASE_TEMPLATE = """<!DOCTYPE html>
 <html lang="ru">
@@ -361,11 +369,17 @@ async def bot_settings_page(status: str = None):
     return get_page(content, "STELLA SYSTEM - BOT SETTINGS", show_intro=False, show_full_nav=True)
 
 @app.post("/update-bot", response_class=HTMLResponse)
-async def update_bot(bot_name: str = Form(...), bot_token: str = Form(...)):
+async def update_bot(request: Request, bot_name: str = Form(...), bot_token: str = Form(...)):
     if bot_name and bot_token:
         BOT_CONFIG["name"] = bot_name
         BOT_CONFIG["token"] = bot_token
-        update_telegram_bot()
+        
+        # Автоматическая установка Webhook в Telegram
+        host_url = str(request.base_url).rstrip('/')
+        webhook_url = f"{host_url}/webhook"
+        async with httpx.AsyncClient() as client:
+            await client.get(f"https://api.telegram.org/bot{bot_token}/setWebhook?url={webhook_url}")
+            
         return RedirectResponse(url="/bot-settings?status=success", status_code=303)
     return RedirectResponse(url="/bot-settings?status=error", status_code=303)
 
@@ -749,21 +763,6 @@ async def render_main_dashboard(intro: bool = True):
     
     final_content = dashboard_content.replace("__BOT_NAME__", BOT_CONFIG["name"]).replace("__DISTRICTS_LABELS__", labels_json).replace("__DISTRICTS_ITEMS__", items_json)
     return get_page(final_content, "STELLA SYSTEM - DASHBOARD", show_intro=intro, show_full_nav=True)
-
-# Автозапуск бота в фоновом режиме вместе с FastAPI
-@app.on_event("startup")
-async def on_startup():
-    async def start_bot():
-        while True:
-            if bot_instance:
-                try:
-                    await dp.start_polling(bot_instance)
-                except Exception:
-                    await asyncio.sleep(5)
-            else:
-                await asyncio.sleep(3)
-    
-    asyncio.create_task(start_bot())
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
