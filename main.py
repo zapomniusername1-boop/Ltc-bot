@@ -20,7 +20,7 @@ def init_db():
     cursor.execute("CREATE TABLE IF NOT EXISTS districts (city TEXT, district TEXT PRIMARY KEY, items INTEGER DEFAULT 0, usd REAL DEFAULT 0, ltc REAL DEFAULT 0)")
     cursor.execute("CREATE TABLE IF NOT EXISTS categories (name TEXT PRIMARY KEY)")
     
-    # Таблица товаров с добавлением времени создания (created_at)
+    # Таблица товаров с добавлением веса (weight) и времени создания (created_at)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS products (
             id INTEGER PRIMARY KEY AUTOINCREMENT, 
@@ -28,6 +28,7 @@ def init_db():
             city TEXT, 
             district TEXT, 
             name TEXT, 
+            weight TEXT,
             price REAL, 
             stock INTEGER DEFAULT 1,
             product_link TEXT, 
@@ -49,7 +50,6 @@ def init_db():
         )
     """)
     
-    # Расширенная таблица покупок для истории (кто купил, когда купил, когда был добавлен товар)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS purchases (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -57,6 +57,7 @@ def init_db():
             username TEXT,
             full_name TEXT,
             product_name TEXT,
+            weight TEXT,
             price REAL,
             district TEXT,
             created_at TEXT,
@@ -253,9 +254,6 @@ async def telegram_webhook(request: Request):
                         cursor.execute("SELECT balance_usd, balance_ltc, ltc_address FROM users WHERE user_id = ?", (chat_id,))
                         user_info = cursor.fetchone()
                         
-                        cursor.execute("SELECT product_name, price, district, sold_at FROM purchases WHERE user_id = ? ORDER BY id DESC LIMIT 5", (chat_id,))
-                        user_purchases = cursor.fetchall()
-
                         cursor.execute("SELECT COUNT(*), SUM(price) FROM purchases WHERE user_id = ?", (chat_id,))
                         stats = cursor.fetchone()
                         conn.close()
@@ -366,7 +364,7 @@ async def telegram_webhook(request: Request):
                         selected_district = parts[0]
                         selected_cat = parts[1]
 
-                        cursor.execute("SELECT name, price, stock FROM products WHERE district = ? AND category = ? AND stock > 0", (selected_district, selected_cat))
+                        cursor.execute("SELECT id, name, weight, price, stock FROM products WHERE district = ? AND category = ? AND stock > 0", (selected_district, selected_cat))
                         products = cursor.fetchall()
                         conn.close()
 
@@ -379,7 +377,7 @@ async def telegram_webhook(request: Request):
                             })
                             return
 
-                        keyboard = {"inline_keyboard": [[{"text": f"📦 {p[0]} — ${p[1]} (Остаток: {p[2]} шт.)", "callback_data": f"buy_{p[0]}"}]] for p in products}
+                        keyboard = {"inline_keyboard": [[{"text": f"📦 {p[1]} ({p[2]}) — ${p[3]} (Остаток: {p[4]} шт.)", "callback_data": f"buy_{p[0]}"}]] for p in products}
                         keyboard["inline_keyboard"].append([{"text": "🔙 Назад", "callback_data": f"dist_{selected_district}"}])
 
                         await client.post(f"{api_url}/editMessageText", json={
@@ -389,25 +387,23 @@ async def telegram_webhook(request: Request):
                         })
 
                     elif callback_data.startswith("buy_"):
-                        prod_name = callback_data.replace("buy_", "").strip()
+                        prod_id_to_buy = int(callback_data.replace("buy_", "").strip())
                         
-                        cursor.execute("SELECT id, name, price, product_link, photo_link, district, stock, created_at FROM products WHERE name = ?", (prod_name,))
+                        cursor.execute("SELECT id, name, weight, price, product_link, photo_link, district, stock, created_at FROM products WHERE id = ?", (prod_id_to_buy,))
                         product = cursor.fetchone()
 
                         if product:
-                            prod_id, p_name, p_price, p_link, p_photo, p_dist, p_stock, p_created = product
+                            prod_id, p_name, p_weight, p_price, p_link, p_photo, p_dist, p_stock, p_created = product
                             
-                            # Получаем данные юзера для фиксации в истории
                             cursor.execute("SELECT username, full_name FROM users WHERE user_id = ?", (chat_id,))
                             u_info = cursor.fetchone()
                             u_uname = u_info[0] if u_info else "нет"
                             u_fname = u_info[1] if u_info else "Без имени"
 
-                            # Записываем в детальную историю покупок
                             cursor.execute("""
-                                INSERT INTO purchases (user_id, username, full_name, product_name, price, district, created_at) 
-                                VALUES (?, ?, ?, ?, ?, ?, ?)
-                            """, (chat_id, u_uname, u_fname, p_name, p_price, p_dist, p_created))
+                                INSERT INTO purchases (user_id, username, full_name, product_name, weight, price, district, created_at) 
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                            """, (chat_id, u_uname, u_fname, p_name, p_weight, p_price, p_dist, p_created))
                             
                             cursor.execute("UPDATE districts SET items = items + 1 WHERE district = ?", (p_dist,))
                             
@@ -422,9 +418,9 @@ async def telegram_webhook(request: Request):
 
                         if product:
                             onetime_msg = get_config("onetime_msg")
-                            delivery_text = f"✅ <b>{onetime_msg}</b>\n\n<b>{product[1]}</b>\nЦена: ${product[2]}\n"
-                            if product[3]:
-                                delivery_text += f"🔗 <b>Ссылка:</b> {product[3]}"
+                            delivery_text = f"✅ <b>{onetime_msg}</b>\n\n<b>{product[1]} ({product[2]})</b>\nЦена: ${product[3]}\n"
+                            if product[4]:
+                                delivery_text += f"🔗 <b>Ссылка:</b> {product[4]}"
 
                             keyboard = {"inline_keyboard": [[{"text": "🏙️ В каталог", "callback_data": "open_catalog"}, {"text": "👤 Профиль", "callback_data": "user_profile"}]]}
 
@@ -433,9 +429,9 @@ async def telegram_webhook(request: Request):
                             except Exception:
                                 pass
 
-                            if product[4]:
+                            if product[5]:
                                 await client.post(f"{api_url}/sendPhoto", json={
-                                    "chat_id": chat_id, "photo": product[4],
+                                    "chat_id": chat_id, "photo": product[5],
                                     "caption": delivery_text, "parse_mode": "HTML", "reply_markup": keyboard
                                 })
                             else:
@@ -492,7 +488,7 @@ BASE_TEMPLATE = """<!DOCTYPE html>
             content: ""; position: absolute; width: 100%; height: 100%; top: 0; left: 0;
             background-image: radial-gradient(var(--text-color) 1px, transparent 0); background-size: 35px 35px; opacity: var(--stars-opacity); z-index: -1;
         }
-        .header-container { width: 100%; max-width: 420px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+        .header-container { width: 100%; max-width: 480px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
         .header-title h1 { font-size: 16px; letter-spacing: 3px; font-weight: 600; color: #38bdf8; text-shadow: 0 0 10px rgba(56,189,248,0.4); }
         .header-title p { font-size: 10px; letter-spacing: 2px; color: var(--text-muted); }
         .menu-btn, .theme-btn { background: var(--card-bg); border: 1px solid var(--border-color); color: var(--text-color); padding: 8px 10px; border-radius: 8px; cursor: pointer; font-size: 15px; }
@@ -508,14 +504,13 @@ BASE_TEMPLATE = """<!DOCTYPE html>
         .admin-info p { font-size: 11px; color: #38bdf8; }
         .admin-info span { font-size: 10px; color: var(--text-muted); }
         
-        .card { background: var(--card-bg); backdrop-filter: blur(15px); border: 1px solid var(--border-color); padding: 20px; border-radius: 20px; width: 100%; max-width: 460px; box-shadow: 0 0 35px rgba(14, 165, 233, 0.2); position: relative; }
+        .card { background: var(--card-bg); backdrop-filter: blur(15px); border: 1px solid var(--border-color); padding: 20px; border-radius: 20px; width: 100%; max-width: 480px; box-shadow: 0 0 35px rgba(14, 165, 233, 0.2); position: relative; }
         input, select, textarea { width: 100%; padding: 13px; margin-bottom: 12px; border-radius: 10px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-color); font-size: 14px; outline: none; }
         input:focus { border-color: #38bdf8; box-shadow: 0 0 8px rgba(56,189,248,0.3); }
         button[type="submit"] { width: 100%; padding: 13px; margin-top: 4px; border-radius: 10px; border: none; background: linear-gradient(135deg, #0284c7, #0369a1); color: #fff; font-size: 15px; font-weight: 600; cursor: pointer; box-shadow: 0 4px 15px rgba(2,132,199,0.4); transition: transform 0.2s; }
         button[type="submit"]:active { transform: scale(0.98); }
         .logout { background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); margin-top: 12px; text-align: center; display: block; text-decoration: none; padding: 11px; border-radius: 10px; color: #fca5a5; font-weight: 600; font-size: 14px; }
         
-        /* Стили для шестерёнки и выпадающего меню */
         .gear-container { position: absolute; top: 20px; right: 20px; }
         .gear-btn { background: var(--input-bg); border: 1px solid var(--border-color); color: #38bdf8; width: 36px; height: 36px; border-radius: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 16px; transition: transform 0.3s; }
         .gear-btn:hover { transform: rotate(90deg); }
@@ -525,11 +520,9 @@ BASE_TEMPLATE = """<!DOCTYPE html>
         .dropdown-menu .delete-opt { color: #fca5a5; }
         .dropdown-menu .delete-opt:hover { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
 
-        /* Модальные окна */
         .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); backdrop-filter: blur(5px); justify-content: center; align-items: center; z-index: 1000; padding: 20px; }
-        .modal-content { background: var(--card-bg); border: 1px solid var(--border-color); padding: 20px; border-radius: 16px; width: 100%; max-width: 380px; box-shadow: 0 0 30px rgba(56,189,248,0.2); }
+        .modal-content { background: var(--card-bg); border: 1px solid var(--border-color); padding: 20px; border-radius: 16px; width: 100%; max-width: 400px; box-shadow: 0 0 30px rgba(56,189,248,0.2); }
 
-        /* Голографическая вращающаяся галочка подтверждения */
         #holoOverlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(7, 10, 19, 0.85); z-index: 9999; justify-content: center; align-items: center; flex-direction: column; }
         .holo-spinner { width: 70px; height: 70px; border: 3px solid rgba(56,189,248,0.2); border-top: 3px solid #38bdf8; border-radius: 50%; animation: spinHolo 0.8s linear infinite; box-shadow: 0 0 20px rgba(56,189,248,0.5); position: relative; display: flex; justify-content: center; align-items: center; }
         .holo-spinner::after { content: "✓"; font-size: 32px; color: #38bdf8; text-shadow: 0 0 10px #38bdf8; animation: pulseCheck 0.8s ease infinite alternate; }
@@ -551,7 +544,6 @@ BASE_TEMPLATE = """<!DOCTYPE html>
         <h2 style="color: #38bdf8; font-size: 14px; letter-spacing: 4px;">STELLA SYSTEM</h2>
     </div>
 
-    <!-- Голографический лоадер действия -->
     <div id="holoOverlay">
         <div class="holo-spinner"></div>
         <p style="color: #38bdf8; margin-top: 15px; font-size: 13px; letter-spacing: 2px;">ДЕЙСТВИЕ ВЫПОЛНЕНО</p>
@@ -1185,7 +1177,7 @@ async def delete_category(request: Request, category_name: str = Form(...)):
     conn.close()
     return RedirectResponse(url="/categories", status_code=303)
 
-# ==================== УПРАВЛЕНИЕ ТОВАРАМИ (CRM-ТАБЛИЦА) ====================
+# ==================== УПРАВЛЕНИЕ ТОВАРАМИ С ВЕСОМ ====================
 @app.get("/products", response_class=HTMLResponse)
 async def products_page(request: Request):
     if request.cookies.get("auth") != "true":
@@ -1200,25 +1192,23 @@ async def products_page(request: Request):
     cursor.execute("SELECT district, city FROM districts")
     districts = cursor.fetchall()
     
-    # Достаем товары для таблицы
-    cursor.execute("SELECT id, category, city, district, name, price, stock, created_at FROM products")
+    cursor.execute("SELECT id, category, city, district, name, weight, price, stock, created_at FROM products")
     products = cursor.fetchall()
     conn.close()
 
     cat_options = "".join([f'<option value="{c}">{c}</option>' for c in categories])
     city_options = "".join([f'<option value="{c}">{c}</option>' for c in cities])
     district_options = "".join([f'<option value="{d[0]}">{d[0]} ({d[1]})</option>' for d in districts])
-    delete_product_options = "".join([f'<option value="{p[0]}">{p[4]} — ${p[5]} ({p[3]})</option>' for p in products])
+    delete_product_options = "".join([f'<option value="{p[0]}">{p[4]} ({p[5]}) — ${p[6]} ({p[3]})</option>' for p in products])
 
-    # Формируем аккуратную таблицу со статусом
     rows_html = "".join([f"""
         <tr style="border-bottom: 1px solid var(--input-border); font-size: 13px;">
-            <td style="padding: 10px;"><b>{p[4]}</b></td>
+            <td style="padding: 10px;"><b>{p[4]}</b> <span style="color: #38bdf8;">({p[5]})</span></td>
             <td style="padding: 10px; color: #38bdf8;">{p[1]}</td>
             <td style="padding: 10px; color: var(--text-muted);">{p[3]} ({p[2]})</td>
-            <td style="padding: 10px;"><b>${p[5]}</b></td>
-            <td style="padding: 10px;"><span style="color: #4ade80; background: rgba(74,222,128,0.1); padding: 3px 6px; border-radius: 4px; font-size: 11px;">🟢 В продаже ({p[6]} шт.)</span></td>
-            <td style="padding: 10px; font-size: 11px; color: var(--text-muted);">{p[7]}</td>
+            <td style="padding: 10px;"><b>${p[6]}</b></td>
+            <td style="padding: 10px;"><span style="color: #4ade80; background: rgba(74,222,128,0.1); padding: 3px 6px; border-radius: 4px; font-size: 11px;">🟢 В продаже ({p[7]} шт.)</span></td>
+            <td style="padding: 10px; font-size: 11px; color: var(--text-muted);">{p[8]}</td>
         </tr>
     """ for p in products]) if products else '<tr><td colspan="6" style="text-align: center; padding: 20px; color: var(--text-muted); font-size: 12px;">Список товаров пуст</td></tr>'
 
@@ -1237,7 +1227,7 @@ async def products_page(request: Request):
             <table style="width: 100%; border-collapse: collapse; text-align: left;">
                 <thead>
                     <tr style="background: var(--input-bg); border-bottom: 1px solid var(--border-color); font-size: 11px; color: var(--text-muted);">
-                        <th style="padding: 10px;">Товар</th>
+                        <th style="padding: 10px;">Товар (Вес)</th>
                         <th style="padding: 10px;">Категория</th>
                         <th style="padding: 10px;">Район (Город)</th>
                         <th style="padding: 10px;">Цена</th>
@@ -1253,7 +1243,6 @@ async def products_page(request: Request):
 
         <a href='/dashboard' class='logout' style='background: #0284c7; color: #fff; border: none; text-decoration: none;'>← В дашборд</a>
 
-        <!-- Модалка: Добавление товара -->
         <div id="addProductModal" class="modal">
             <div class="modal-content">
                 <h3 style="color: #38bdf8; font-size: 15px; margin-bottom: 12px;">Добавить товар</h3>
@@ -1262,6 +1251,7 @@ async def products_page(request: Request):
                     <select name="city" required><option value="" disabled selected>Город</option>{city_options}</select>
                     <select name="district" required><option value="" disabled selected>Район</option>{district_options}</select>
                     <input type="text" name="product_name" placeholder="Название товара" required>
+                    <input type="text" name="weight" placeholder="Фасовка/Вес (например, 1 г, 2 г)" required>
                     <input type="number" step="0.01" name="price" placeholder="Цена ($)" required>
                     <input type="number" name="stock" placeholder="Количество (шт.)" value="1" min="1" required>
                     <input type="url" name="product_link" placeholder="Ссылка выдачи после покупки">
@@ -1271,7 +1261,6 @@ async def products_page(request: Request):
             </div>
         </div>
 
-        <!-- Модалка: Удаление товара -->
         <div id="deleteProductModal" class="modal">
             <div class="modal-content">
                 <h3 style="color: #ef4444; font-size: 15px; margin-bottom: 12px;">Удалить товар</h3>
@@ -1289,7 +1278,7 @@ async def products_page(request: Request):
     return get_page(content, show_full_nav=True)
 
 @app.post("/add-product", response_class=HTMLResponse)
-async def add_product(request: Request, category: str = Form(...), city: str = Form(...), district: str = Form(...), product_name: str = Form(...), price: float = Form(...), stock: int = Form(1), product_link: str = Form("")):
+async def add_product(request: Request, category: str = Form(...), city: str = Form(...), district: str = Form(...), product_name: str = Form(...), weight: str = Form(...), price: float = Form(...), stock: int = Form(1), product_link: str = Form("")):
     if request.cookies.get("auth") != "true":
         return RedirectResponse(url="/", status_code=303)
 
@@ -1297,9 +1286,9 @@ async def add_product(request: Request, category: str = Form(...), city: str = F
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("""
-        INSERT INTO products (category, city, district, name, price, stock, product_link, created_at) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    """, (category.strip(), city.strip(), district.strip(), product_name.strip(), price, stock, product_link.strip(), now_time))
+        INSERT INTO products (category, city, district, name, weight, price, stock, product_link, created_at) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (category.strip(), city.strip(), district.strip(), product_name.strip(), weight.strip(), price, stock, product_link.strip(), now_time))
     conn.commit()
     conn.close()
     return RedirectResponse(url="/products", status_code=303)
@@ -1316,8 +1305,7 @@ async def delete_product(request: Request, product_id: int = Form(...)):
     conn.close()
     return RedirectResponse(url="/products", status_code=303)
 
-
-# ==================== ИСТОРИЯ ПОКУПОК (ПРОДАНО) ====================
+# ==================== ИСТОРИЯ ПОКУПОК ====================
 @app.get("/purchases-history", response_class=HTMLResponse)
 async def purchases_history_page(request: Request):
     if request.cookies.get("auth") != "true":
@@ -1326,7 +1314,7 @@ async def purchases_history_page(request: Request):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT product_name, price, district, created_at, sold_at, full_name, username, user_id 
+        SELECT product_name, weight, price, district, created_at, sold_at, full_name, username, user_id 
         FROM purchases ORDER BY id DESC
     """)
     purchases = cursor.fetchall()
@@ -1335,16 +1323,16 @@ async def purchases_history_page(request: Request):
     history_rows = "".join([f"""
         <tr style="border-bottom: 1px solid var(--input-border); font-size: 12px;">
             <td style="padding: 10px;">
-                <b>{p[0]}</b><br>
-                <span style="color: #38bdf8;">${p[1]}</span> | <span style="color: var(--text-muted);">{p[2]}</span>
+                <b>{p[0]}</b> <span style="color: #38bdf8;">({p[1]})</span><br>
+                <span style="color: #38bdf8;">${p[2]}</span> | <span style="color: var(--text-muted);">{p[3]}</span>
             </td>
             <td style="padding: 10px;">
-                <b>{p[5]}</b><br>
-                <span style="color: #4ade80;">{p[6]}</span> <span style="color: var(--text-muted);">(ID: {p[7]})</span>
+                <b>{p[6]}</b><br>
+                <span style="color: #4ade80;">{p[7]}</span> <span style="color: var(--text-muted);">(ID: {p[8]})</span>
             </td>
             <td style="padding: 10px; color: var(--text-muted);">
-                ➕ Добавлен: {p[3]}<br>
-                🛒 Продан: <b style="color: #fca5a5;">{p[4]}</b>
+                ➕ Добавлен: {p[4]}<br>
+                🛒 Продан: <b style="color: #fca5a5;">{p[5]}</b>
             </td>
         </tr>
     """ for p in purchases]) if purchases else '<tr><td colspan="3" style="text-align: center; padding: 25px; color: var(--text-muted); font-size: 12px;">История покупок пуста</td></tr>'
@@ -1356,7 +1344,7 @@ async def purchases_history_page(request: Request):
             <table style="width: 100%; border-collapse: collapse; text-align: left;">
                 <thead>
                     <tr style="background: var(--input-bg); border-bottom: 1px solid var(--border-color); font-size: 11px; color: var(--text-muted);">
-                        <th style="padding: 10px;">Товар / Цена / Район</th>
+                        <th style="padding: 10px;">Товар (Вес) / Цена / Район</th>
                         <th style="padding: 10px;">Покупатель (Юзер)</th>
                         <th style="padding: 10px;">Таймстампы (Даты)</th>
                     </tr>
