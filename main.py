@@ -389,4 +389,4 @@ async def telegram_webhook(request: Request):
                     elif callback_data.startswith("buy_"):
                         prod_id_to_buy = int(callback_data.replace("buy_", "").strip())
                         
-                        cursor.execute("SELECT id, name, weight, price, product_link, p
+                        cursor.execute("SELECT id, name, weight, price, product_link, district, category FROM products WHERE id = ? AND stock > 0", (prod_id_to_buy,))
