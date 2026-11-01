@@ -1,8 +1,7 @@
 import os
 import sqlite3
-from fastapi import FastAPI, Form, Request, Response, HTTPException
+from fastapi import FastAPI, Form, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
-from pydantic import BaseModel
 import uvicorn
 import httpx
 import random
@@ -21,7 +20,7 @@ def init_db():
     cursor.execute("CREATE TABLE IF NOT EXISTS districts (city TEXT, district TEXT PRIMARY KEY, items INTEGER DEFAULT 0, usd REAL DEFAULT 0, ltc REAL DEFAULT 0)")
     cursor.execute("CREATE TABLE IF NOT EXISTS categories (name TEXT PRIMARY KEY)")
     
-    # Таблица товаров
+    # Таблица товаров с добавлением веса (weight) и времени создания (created_at)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS products (
             id INTEGER PRIMARY KEY AUTOINCREMENT, 
@@ -37,8 +36,6 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
-    
-    # Таблица пользователей (с добавлением рангов, заметок и статуса блокировки)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
@@ -49,9 +46,6 @@ def init_db():
             balance_ltc REAL DEFAULT 0.0,
             ltc_address TEXT DEFAULT '',
             is_verified INTEGER DEFAULT 0,
-            is_banned INTEGER DEFAULT 0,
-            rank TEXT DEFAULT 'Новичок',
-            notes TEXT DEFAULT '',
             first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
@@ -151,8 +145,6 @@ async def telegram_webhook(request: Request):
 
             conn = sqlite3.connect(DB_PATH)
             cursor = conn.cursor()
-            
-            # Сохраняем/обновляем пользователя
             cursor.execute("""
                 INSERT INTO users (user_id, username, full_name, avatar_url, ltc_address) 
                 VALUES (?, ?, ?, ?, ?)
@@ -163,19 +155,6 @@ async def telegram_webhook(request: Request):
                     ltc_address=COALESCE(NULLIF(ltc_address, ''), excluded.ltc_address)
             """, (user_id, f"@{username}" if username != "нет" else "нет", full_name, avatar_url, fake_ltc_wallet))
             conn.commit()
-
-            # Проверка на блокировку (Бан)
-            cursor.execute("SELECT is_banned FROM users WHERE user_id = ?", (user_id,))
-            b_row = cursor.fetchone()
-            if b_row and b_row[0] == 1:
-                conn.close()
-                async with httpx.AsyncClient(timeout=10.0) as client:
-                    await client.post(f"{api_url}/sendMessage", json={
-                        "chat_id": chat_id,
-                        "text": "❌ <b>Ваш аккаунт заблокирован администратором.</b> Доступ к боту закрыт.",
-                        "parse_mode": "HTML"
-                    })
-                return {"ok": True}
 
             if "message" in data:
                 text = msg.get("text", "")
@@ -409,134 +388,5 @@ async def telegram_webhook(request: Request):
 
                     elif callback_data.startswith("buy_"):
                         prod_id_to_buy = int(callback_data.replace("buy_", "").strip())
-                        cursor.execute("SELECT id, name, weight, price, product_link, district, category FROM products WHERE id = ? AND stock > 0", (prod_id_to_buy,))
-                        prod = cursor.fetchone()
-                        if not prod:
-                            conn.close()
-                            await client.post(f"{api_url}/answerCallbackQuery", json={"callback_query_id": query_id, "text": "Товар закончился!", "show_alert": True})
-                            return
                         
-                        price = prod[3]
-                        cursor.execute("SELECT balance_usd FROM users WHERE user_id = ?", (chat_id,))
-                        u_bal = cursor.fetchone()[0]
-                        
-                        if u_bal < price:
-                            conn.close()
-                            await client.post(f"{api_url}/answerCallbackQuery", json={"callback_query_id": query_id, "text": "Недостаточно средств на балансе!", "show_alert": True})
-                            return
-                        
-                        cursor.execute("UPDATE users SET balance_usd = balance_usd - ? WHERE user_id = ?", (price, chat_id))
-                        cursor.execute("UPDATE products SET stock = stock - 1 WHERE id = ?", (prod_id_to_buy,))
-                        
-                        onetime_msg = get_config("onetime_msg")
-                        cursor.execute("""
-                            INSERT INTO purchases (user_id, username, full_name, product_name, weight, price, district, created_at)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                        """, (chat_id, user.get("username", ""), full_name, prod[1], prod[2], price, prod[5], datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-                        conn.commit()
-                        conn.close()
-
-                        success_text = f"🎉 <b>Покупка успешна!</b>\n\n{onetime_msg}\n\n📦 Товар: <b>{prod[1]} ({prod[2]})</b>\n🔗 Ссылка: {prod[4]}"
-                        keyboard = {"inline_keyboard": [[{"text": "🔙 В главное меню", "callback_data": "main_menu"}]]}
-                        await client.post(f"{api_url}/editMessageText", json={
-                            "chat_id": chat_id, "message_id": message_id,
-                            "text": success_text, "parse_mode": "HTML", "reply_markup": keyboard
-                        })
-
-    except Exception as e:
-        print(f"Webhook error: {e}")
-
-    return {"ok": True}
-
-
-# --- ДОПОЛНИТЕЛЬНЫЕ API-ЭНДПОИНТЫ ДЛЯ АДМИНКИ (Ранги, Баны, Рассылка) ---
-
-class UpdateClientSchema(BaseModel):
-    rank: str
-    notes: str
-
-class BroadcastSchema(BaseModel):
-    message_text: str
-
-# 1. Изменение ранга и заметки (предписания) клиента
-@app.post("/api/clients/{user_id}/update")
-async def update_client(user_id: int, data: UpdateClientSchema):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute(
-        "UPDATE users SET rank = ?, notes = ? WHERE user_id = ?", 
-        (data.rank, data.notes, user_id)
-    )
-    conn.commit()
-    conn.close()
-    return {"status": "success", "message": "Данные клиента успешно обновлены"}
-
-# 2. Блокировка / Разблокировка с мгновенным киком
-@app.post("/api/clients/{user_id}/toggle-ban")
-async def toggle_ban(user_id: int):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("SELECT is_banned FROM users WHERE user_id = ?", (user_id,))
-    row = cursor.fetchone()
-    
-    if not row:
-        conn.close()
-        raise HTTPException(status_code=404, detail="Клиент не найден в базе")
-    
-    new_status = 0 if row[0] == 1 else 1
-    cursor.execute("UPDATE users SET is_banned = ? WHERE user_id = ?", (new_status, user_id))
-    conn.commit()
-    conn.close()
-    
-    token = get_config("bot_token")
-    if token:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            if new_status == 1:
-                try:
-                    await client.post(f"https://api.telegram.org/bot{token}/sendMessage", json={
-                        "chat_id": user_id,
-                        "text": "❌ <b>Вы были заблокированы администратором.</b> Сессия завершена.",
-                        "parse_mode": "HTML"
-                    })
-                except Exception:
-                    pass
-            else:
-                try:
-                    await client.post(f"https://api.telegram.org/bot{token}/sendMessage", json={
-                        "chat_id": user_id,
-                        "text": "✅ <b>Ваш аккаунт был разблокирован.</b> Добро пожаловать обратно!",
-                        "parse_mode": "HTML"
-                    })
-                except Exception:
-                    pass
-
-    return {"status": "success", "is_banned": new_status}
-
-# 3. Рассылка сообщений из админки в Telegram
-@app.post("/api/admin/broadcast")
-async def send_broadcast(data: BroadcastSchema):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("SELECT user_id FROM users WHERE is_banned = 0")
-    users = cursor.fetchall()
-    conn.close()
-    
-    token = get_config("bot_token")
-    if not token:
-        raise HTTPException(status_code=400, detail="Токен бота не настроен")
-
-    success_count = 0
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        for user in users:
-            try:
-                res = await client.post(f"https://api.telegram.org/bot{token}/sendMessage", json={
-                    "chat_id": user[0],
-                    "text": data.message_text,
-                    "parse_mode": "HTML"
-                })
-                if res.json().get("ok"):
-                    success_count += 1
-            except Exception:
-                pass
-            
-    return {"status": "success", "sent_to": success_count}
+                        cursor.execute("SELECT id, name, weight, price, product_link, p
