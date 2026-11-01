@@ -589,10 +589,10 @@ BASE_TEMPLATE = """<!DOCTYPE html>
         function toggleSidebar() { document.getElementById('sidebar').classList.toggle('open'); }
         function toggleDropdown(id = 'gearDropdown') {
             const menu = document.getElementById(id);
-            menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
+            if(menu) menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
         }
         window.onclick = function(event) {
-            if (!event.target.matches('.gear-btn') && !event.target.closest('.gear-btn')) {
+            if (!event.target.matches('.gear-btn') && !event.target.closest('.gear-btn') && !event.target.matches('[onclick^="toggleDropdown"]')) {
                 const dropdowns = document.getElementsByClassName("dropdown-menu");
                 for (let i = 0; i < dropdowns.length; i++) {
                     dropdowns[i].style.display = "none";
@@ -865,29 +865,125 @@ async def clients_page(request: Request):
 
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("SELECT user_id, username, full_name, avatar_url, first_seen, rank, is_banned FROM users ORDER BY first_seen DESC")
+    cursor.execute("SELECT user_id, username, full_name, avatar_url, first_seen, rank, notes, is_banned FROM users ORDER BY first_seen DESC")
     users = cursor.fetchall()
     conn.close()
 
-    list_html = "".join([f"""
-        <div style="display: flex; align-items: center; gap: 12px; background: var(--input-bg); padding: 10px 12px; border-radius: 10px; margin-bottom: 8px; border: 1px solid var(--input-border);">
-            <img src="{u[3]}" alt="Avatar" style="width: 38px; height: 38px; border-radius: 50%; object-fit: cover; border: 1px solid #38bdf8; flex-shrink: 0;">
+    ranks_list = ["Новичок", "Постоянный", "VIP", "Элита", "Дилер"]
+
+    list_html = ""
+    for u in users:
+        u_id, u_uname, u_fname, u_avatar, u_seen, u_rank, u_notes, u_banned = u
+        badge_color = "#ef4444" if u_banned == 1 else "#4ade80"
+        badge_text = "🔴 Заблокирован" if u_banned == 1 else u_rank
+
+        ranks_options = "".join([f'<option value="{r}" {"selected" if r == u_rank else ""}>{r}</option>' for r in ranks_list])
+        ban_btn_text = "🟢 Разблокировать" if u_banned == 1 else "🔴 Заблокировать"
+        ban_action = f"/api/clients/{u_id}/toggle-ban"
+
+        list_html += f"""
+        <div style="display: flex; align-items: center; gap: 12px; background: var(--input-bg); padding: 10px 12px; border-radius: 10px; margin-bottom: 8px; border: 1px solid var(--input-border); position: relative;">
+            <img src="{u_avatar}" alt="Avatar" style="width: 38px; height: 38px; border-radius: 50%; object-fit: cover; border: 1px solid #38bdf8; flex-shrink: 0;">
             <div style="flex-grow: 1; overflow: hidden;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
-                    <span style="font-size: 13px; font-weight: 600; color: #f8fafc;">{u[2] or 'Без имени'}</span>
-                    <span style="font-size: 11px; color: {'#ef4444' if u[6] == 1 else '#4ade80'};">{'🔴 Заблокирован' if u[6] == 1 else u[5]}</span>
+                    <span style="font-size: 13px; font-weight: 600; color: #f8fafc;">{u_fname or 'Без имени'}</span>
+                    <span style="font-size: 11px; color: {badge_color};">{badge_text}</span>
                 </div>
-                <div style="font-size: 10px; color: var(--text-muted);">ID: {u[0]} | Юзер: {u[1]}</div>
+                <div style="font-size: 10px; color: var(--text-muted);">ID: {u_id} | Юзер: {u_uname}</div>
+                {f'<div style="font-size: 10px; color: #38bdf8; margin-top: 2px;">📝 Заметка: {u_notes}</div>' if u_notes else ''}
+            </div>
+            
+            <div style="position: relative;">
+                <button onclick="toggleDropdown('drop_{u_id}')" style="background: transparent; border: none; color: var(--text-muted); font-size: 18px; cursor: pointer; padding: 4px 8px;">⋮</button>
+                <div id="drop_{u_id}" class="dropdown-menu" style="right: 0; top: 30px; width: 150px;">
+                    <button onclick="openModal('modal_{u_id}')">✏️ Изменить</button>
+                    <form method="POST" action="{ban_action}" onsubmit="return showHolo(this)">
+                        <button type="submit" style="color: {'#4ade80' if u_banned == 1 else '#ef4444'};">{ban_btn_text}</button>
+                    </form>
+                </div>
             </div>
         </div>
-    """ for u in users]) if users else '<p style="font-size: 11px; color: var(--text-muted); text-align: center;">Клиентов пока нет</p>'
+
+        <div id="modal_{u_id}" class="modal">
+            <div class="modal-content">
+                <h3 style="color: #38bdf8; font-size: 15px; margin-bottom: 12px;">Клиент: {u_fname}</h3>
+                <form method="POST" action="/api/clients/{u_id}/update-form" onsubmit="return showHolo(this)">
+                    <label style="font-size: 11px; color: var(--text-muted);">Ранг клиента:</label>
+                    <select name="rank" required>
+                        {ranks_options}
+                    </select>
+                    <label style="font-size: 11px; color: var(--text-muted);">Заметка (предписание):</label>
+                    <textarea name="notes" rows="3" placeholder="Заметка о клиенте..." style="resize: none;">{u_notes or ''}</textarea>
+                    <button type="submit">Сохранить</button>
+                </form>
+                <button type="button" onclick="closeModal('modal_{u_id}')" style="width: 100%; margin-top: 8px; background: transparent; border: 1px solid var(--border-color); color: var(--text-muted); padding: 10px; border-radius: 10px; cursor: pointer;">Отмена</button>
+            </div>
+        </div>
+        """
+
+    if not list_html:
+        list_html = '<p style="font-size: 11px; color: var(--text-muted); text-align: center;">Клиентов пока нет</p>'
 
     content = f"""
         <div style="text-align:center; margin-bottom: 14px;"><h2>Клиентская база ({len(users)})</h2></div>
-        <div style="max-height: 280px; overflow-y: auto; margin-bottom: 14px;">{list_html}</div>
+        <div style="max-height: 380px; overflow-y: auto; margin-bottom: 14px; padding-right: 4px;">{list_html}</div>
         <a href='/dashboard' class='logout' style='background: #0284c7; color: #fff; border: none; text-decoration: none;'>← В дашборд</a>
     """
     return get_page(content, show_full_nav=True)
+
+@app.post("/api/clients/{user_id}/update-form", response_class=HTMLResponse)
+async def update_client_form(request: Request, user_id: int, rank: str = Form(...), notes: str = Form("")):
+    if request.cookies.get("auth") != "true":
+        return RedirectResponse(url="/", status_code=303)
+        
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("UPDATE users SET rank = ?, notes = ? WHERE user_id = ?", (rank.strip(), notes.strip(), user_id))
+    conn.commit()
+    conn.close()
+    return RedirectResponse(url="/clients", status_code=303)
+
+@app.post("/api/clients/{user_id}/toggle-ban", response_class=HTMLResponse)
+async def toggle_ban_form(request: Request, user_id: int):
+    if request.cookies.get("auth") != "true":
+        return RedirectResponse(url="/", status_code=303)
+
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT is_banned FROM users WHERE user_id = ?", (user_id,))
+    row = cursor.fetchone()
+    
+    if row:
+        new_status = 0 if row[0] == 1 else 1
+        cursor.execute("UPDATE users SET is_banned = ? WHERE user_id = ?", (new_status, user_id))
+        conn.commit()
+        conn.close()
+        
+        token = get_config("bot_token")
+        if token:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                if new_status == 1:
+                    try:
+                        await client.post(f"https://api.telegram.org/bot{token}/sendMessage", json={
+                            "chat_id": user_id,
+                            "text": "❌ <b>Вы были заблокированы администратором.</b> Доступ к боту закрыт.",
+                            "parse_mode": "HTML"
+                        })
+                    except Exception:
+                        pass
+                else:
+                    try:
+                        await client.post(f"https://api.telegram.org/bot{token}/sendMessage", json={
+                            "chat_id": user_id,
+                            "text": "✅ <b>Ваш аккаунт был разблокирован.</b> Добро пожаловать обратно!",
+                            "parse_mode": "HTML"
+                        })
+                    except Exception:
+                        pass
+    else:
+        conn.close()
+
+    return RedirectResponse(url="/clients", status_code=303)
 
 @app.get("/bot-settings", response_class=HTMLResponse)
 async def bot_settings_page(request: Request):
@@ -1375,97 +1471,6 @@ async def purchases_history_page(request: Request):
         <a href='/dashboard' class='logout' style='background: #0284c7; color: #fff; border: none; text-decoration: none;'>← В дашборд</a>
     """
     return get_page(content, show_full_nav=True)
-
-
-# ==================== API ДЛЯ АДМИНКИ (Ранги, Баны, Рассылка) ====================
-
-class UpdateClientSchema(BaseModel):
-    rank: str
-    notes: str
-
-class BroadcastSchema(BaseModel):
-    message_text: str
-
-@app.post("/api/clients/{user_id}/update")
-async def update_client(user_id: int, data: UpdateClientSchema):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute(
-        "UPDATE users SET rank = ?, notes = ? WHERE user_id = ?", 
-        (data.rank, data.notes, user_id)
-    )
-    conn.commit()
-    conn.close()
-    return {"status": "success", "message": "Данные клиента успешно обновлены"}
-
-@app.post("/api/clients/{user_id}/toggle-ban")
-async def toggle_ban(user_id: int):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("SELECT is_banned FROM users WHERE user_id = ?", (user_id,))
-    row = cursor.fetchone()
-    
-    if not row:
-        conn.close()
-        raise HTTPException(status_code=404, detail="Клиент не найден в базе")
-    
-    new_status = 0 if row[0] == 1 else 1
-    cursor.execute("UPDATE users SET is_banned = ? WHERE user_id = ?", (new_status, user_id))
-    conn.commit()
-    conn.close()
-    
-    token = get_config("bot_token")
-    if token:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            if new_status == 1:
-                try:
-                    await client.post(f"https://api.telegram.org/bot{token}/sendMessage", json={
-                        "chat_id": user_id,
-                        "text": "❌ <b>Вы были заблокированы администратором.</b> Доступ к боту закрыт.",
-                        "parse_mode": "HTML"
-                    })
-                except Exception:
-                    pass
-            else:
-                try:
-                    await client.post(f"https://api.telegram.org/bot{token}/sendMessage", json={
-                        "chat_id": user_id,
-                        "text": "✅ <b>Ваш аккаунт был разблокирован.</b> Добро пожаловать обратно!",
-                        "parse_mode": "HTML"
-                    })
-                except Exception:
-                    pass
-
-    return {"status": "success", "is_banned": new_status}
-
-@app.post("/api/admin/broadcast")
-async def send_broadcast(data: BroadcastSchema):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("SELECT user_id FROM users WHERE is_banned = 0")
-    users = cursor.fetchall()
-    conn.close()
-    
-    token = get_config("bot_token")
-    if not token:
-        raise HTTPException(status_code=400, detail="Токен бота не настроен")
-
-    success_count = 0
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        for user in users:
-            try:
-                res = await client.post(f"https://api.telegram.org/bot{token}/sendMessage", json={
-                    "chat_id": user[0],
-                    "text": data.message_text,
-                    "parse_mode": "HTML"
-                })
-                if res.json().get("ok"):
-                    success_count += 1
-            except Exception:
-                pass
-            
-    return {"status": "success", "sent_to": success_count}
-
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
