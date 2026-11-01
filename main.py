@@ -6,6 +6,7 @@ import uvicorn
 import httpx
 import random
 import json
+from datetime import datetime
 
 app = FastAPI()
 
@@ -18,6 +19,8 @@ def init_db():
     cursor.execute("CREATE TABLE IF NOT EXISTS cities (name TEXT PRIMARY KEY)")
     cursor.execute("CREATE TABLE IF NOT EXISTS districts (city TEXT, district TEXT PRIMARY KEY, items INTEGER DEFAULT 0, usd REAL DEFAULT 0, ltc REAL DEFAULT 0)")
     cursor.execute("CREATE TABLE IF NOT EXISTS categories (name TEXT PRIMARY KEY)")
+    
+    # Таблица товаров с добавлением времени создания (created_at)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS products (
             id INTEGER PRIMARY KEY AUTOINCREMENT, 
@@ -28,7 +31,8 @@ def init_db():
             price REAL, 
             stock INTEGER DEFAULT 1,
             product_link TEXT, 
-            photo_link TEXT
+            photo_link TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
     cursor.execute("""
@@ -44,14 +48,19 @@ def init_db():
             first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    
+    # Расширенная таблица покупок для истории (кто купил, когда купил, когда был добавлен товар)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS purchases (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER,
+            username TEXT,
+            full_name TEXT,
             product_name TEXT,
             price REAL,
             district TEXT,
-            date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            created_at TEXT,
+            sold_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
     conn.commit()
@@ -244,7 +253,7 @@ async def telegram_webhook(request: Request):
                         cursor.execute("SELECT balance_usd, balance_ltc, ltc_address FROM users WHERE user_id = ?", (chat_id,))
                         user_info = cursor.fetchone()
                         
-                        cursor.execute("SELECT product_name, price, district, date FROM purchases WHERE user_id = ? ORDER BY id DESC LIMIT 5", (chat_id,))
+                        cursor.execute("SELECT product_name, price, district, sold_at FROM purchases WHERE user_id = ? ORDER BY id DESC LIMIT 5", (chat_id,))
                         user_purchases = cursor.fetchall()
 
                         cursor.execute("SELECT COUNT(*), SUM(price) FROM purchases WHERE user_id = ?", (chat_id,))
@@ -382,14 +391,24 @@ async def telegram_webhook(request: Request):
                     elif callback_data.startswith("buy_"):
                         prod_name = callback_data.replace("buy_", "").strip()
                         
-                        cursor.execute("SELECT id, name, price, product_link, photo_link, district, stock FROM products WHERE name = ?", (prod_name,))
+                        cursor.execute("SELECT id, name, price, product_link, photo_link, district, stock, created_at FROM products WHERE name = ?", (prod_name,))
                         product = cursor.fetchone()
 
                         if product:
-                            prod_id, p_name, p_price, p_link, p_photo, p_dist, p_stock = product
+                            prod_id, p_name, p_price, p_link, p_photo, p_dist, p_stock, p_created = product
                             
-                            cursor.execute("INSERT INTO purchases (user_id, product_name, price, district) VALUES (?, ?, ?, ?)", 
-                                           (chat_id, p_name, p_price, p_dist))
+                            # Получаем данные юзера для фиксации в истории
+                            cursor.execute("SELECT username, full_name FROM users WHERE user_id = ?", (chat_id,))
+                            u_info = cursor.fetchone()
+                            u_uname = u_info[0] if u_info else "нет"
+                            u_fname = u_info[1] if u_info else "Без имени"
+
+                            # Записываем в детальную историю покупок
+                            cursor.execute("""
+                                INSERT INTO purchases (user_id, username, full_name, product_name, price, district, created_at) 
+                                VALUES (?, ?, ?, ?, ?, ?, ?)
+                            """, (chat_id, u_uname, u_fname, p_name, p_price, p_dist, p_created))
+                            
                             cursor.execute("UPDATE districts SET items = items + 1 WHERE district = ?", (p_dist,))
                             
                             new_stock = p_stock - 1
@@ -489,7 +508,7 @@ BASE_TEMPLATE = """<!DOCTYPE html>
         .admin-info p { font-size: 11px; color: #38bdf8; }
         .admin-info span { font-size: 10px; color: var(--text-muted); }
         
-        .card { background: var(--card-bg); backdrop-filter: blur(15px); border: 1px solid var(--border-color); padding: 20px; border-radius: 20px; width: 100%; max-width: 420px; box-shadow: 0 0 35px rgba(14, 165, 233, 0.2); position: relative; }
+        .card { background: var(--card-bg); backdrop-filter: blur(15px); border: 1px solid var(--border-color); padding: 20px; border-radius: 20px; width: 100%; max-width: 460px; box-shadow: 0 0 35px rgba(14, 165, 233, 0.2); position: relative; }
         input, select, textarea { width: 100%; padding: 13px; margin-bottom: 12px; border-radius: 10px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-color); font-size: 14px; outline: none; }
         input:focus { border-color: #38bdf8; box-shadow: 0 0 8px rgba(56,189,248,0.3); }
         button[type="submit"] { width: 100%; padding: 13px; margin-top: 4px; border-radius: 10px; border: none; background: linear-gradient(135deg, #0284c7, #0369a1); color: #fff; font-size: 15px; font-weight: 600; cursor: pointer; box-shadow: 0 4px 15px rgba(2,132,199,0.4); transition: transform 0.2s; }
@@ -508,7 +527,7 @@ BASE_TEMPLATE = """<!DOCTYPE html>
 
         /* Модальные окна */
         .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); backdrop-filter: blur(5px); justify-content: center; align-items: center; z-index: 1000; padding: 20px; }
-        .modal-content { background: var(--card-bg); border: 1px solid var(--border-color); padding: 20px; border-radius: 16px; width: 100%; max-width: 360px; box-shadow: 0 0 30px rgba(56,189,248,0.2); }
+        .modal-content { background: var(--card-bg); border: 1px solid var(--border-color); padding: 20px; border-radius: 16px; width: 100%; max-width: 380px; box-shadow: 0 0 30px rgba(56,189,248,0.2); }
 
         /* Голографическая вращающаяся галочка подтверждения */
         #holoOverlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(7, 10, 19, 0.85); z-index: 9999; justify-content: center; align-items: center; flex-direction: column; }
@@ -605,6 +624,7 @@ def get_page(content: str, show_full_nav: bool = False) -> str:
                     <a href="/districts">📍 Районы</a>
                     <a href="/categories">📂 Категории</a>
                     <a href="/products">📦 Товары</a>
+                    <a href="/purchases-history">📜 История покупок</a>
                     <a href="/config-auth" style="color: #38bdf8;">⚙️ Изменить пароль/пин</a>
                     <a href="/logout" style="color: #fca5a5;">🚪 Выход</a>
                 </div>
@@ -919,7 +939,7 @@ async def update_bot_messages(request: Request, welcome_msg: str = Form(...), on
     set_config("onetime_msg", onetime_msg)
     return RedirectResponse(url="/bot-messages", status_code=303)
 
-# ==================== УПРАВЛЕНИЕ ГОРОДАМИ (С ШЕСТЕРЁНКОЙ) ====================
+# ==================== УПРАВЛЕНИЕ ГОРОДАМИ ====================
 @app.get("/cities", response_class=HTMLResponse)
 async def cities_page(request: Request):
     if request.cookies.get("auth") != "true":
@@ -999,7 +1019,7 @@ async def delete_city(request: Request, city_name: str = Form(...)):
     conn.close()
     return RedirectResponse(url="/cities", status_code=303)
 
-# ==================== УПРАВЛЕНИЕ РАЙОНАМИ (С ШЕСТЕРЁНКОЙ) ====================
+# ==================== УПРАВЛЕНИЕ РАЙОНАМИ ====================
 @app.get("/districts", response_class=HTMLResponse)
 async def districts_page(request: Request):
     if request.cookies.get("auth") != "true":
@@ -1165,6 +1185,7 @@ async def delete_category(request: Request, category_name: str = Form(...)):
     conn.close()
     return RedirectResponse(url="/categories", status_code=303)
 
+# ==================== УПРАВЛЕНИЕ ТОВАРАМИ (CRM-ТАБЛИЦА) ====================
 @app.get("/products", response_class=HTMLResponse)
 async def products_page(request: Request):
     if request.cookies.get("auth") != "true":
@@ -1178,29 +1199,92 @@ async def products_page(request: Request):
     cities = [row[0] for row in cursor.fetchall()]
     cursor.execute("SELECT district, city FROM districts")
     districts = cursor.fetchall()
-    cursor.execute("SELECT name, price, district, stock FROM products")
+    
+    # Достаем товары для таблицы
+    cursor.execute("SELECT id, category, city, district, name, price, stock, created_at FROM products")
     products = cursor.fetchall()
     conn.close()
 
     cat_options = "".join([f'<option value="{c}">{c}</option>' for c in categories])
     city_options = "".join([f'<option value="{c}">{c}</option>' for c in cities])
     district_options = "".join([f'<option value="{d[0]}">{d[0]} ({d[1]})</option>' for d in districts])
-    list_html = "".join([f'<div>📦 {p[0]} — ${p[1]} | Район: {p[2]} | <b style="color: #4ade80;">{p[3]} шт.</b></div>' for p in products]) or 'Нет товаров'
+    delete_product_options = "".join([f'<option value="{p[0]}">{p[4]} — ${p[5]} ({p[3]})</option>' for p in products])
+
+    # Формируем аккуратную таблицу со статусом
+    rows_html = "".join([f"""
+        <tr style="border-bottom: 1px solid var(--input-border); font-size: 13px;">
+            <td style="padding: 10px;"><b>{p[4]}</b></td>
+            <td style="padding: 10px; color: #38bdf8;">{p[1]}</td>
+            <td style="padding: 10px; color: var(--text-muted);">{p[3]} ({p[2]})</td>
+            <td style="padding: 10px;"><b>${p[5]}</b></td>
+            <td style="padding: 10px;"><span style="color: #4ade80; background: rgba(74,222,128,0.1); padding: 3px 6px; border-radius: 4px; font-size: 11px;">🟢 В продаже ({p[6]} шт.)</span></td>
+            <td style="padding: 10px; font-size: 11px; color: var(--text-muted);">{p[7]}</td>
+        </tr>
+    """ for p in products]) if products else '<tr><td colspan="6" style="text-align: center; padding: 20px; color: var(--text-muted); font-size: 12px;">Список товаров пуст</td></tr>'
 
     content = f"""
-        <h2>Управление товарами</h2>
-        <form method="POST" action="/add-product">
-            <select name="category" required><option value="" disabled selected>Категория</option>{cat_options}</select>
-            <select name="city" required><option value="" disabled selected>Город</option>{city_options}</select>
-            <select name="district" required><option value="" disabled selected>Район</option>{district_options}</select>
-            <input type="text" name="product_name" placeholder="Название товара" required>
-            <input type="number" step="0.01" name="price" placeholder="Цена ($)" required>
-            <input type="number" name="stock" placeholder="Количество (сколько штук доступно)" value="1" min="1" required>
-            <input type="url" name="product_link" placeholder="Ссылка выдачи после покупки">
-            <button type="submit">Добавить товар</button>
-        </form>
-        <div style="margin-top: 15px;">{list_html}</div>
-        <a href='/dashboard' class='logout' style='background: #0284c7; color: #fff; border: none; text-decoration: none;'>Назад в дашборд</a>
+        <div class="gear-container">
+            <button class="gear-btn" onclick="toggleDropdown('prodDropdown')" title="Настройки">⚙️</button>
+            <div id="prodDropdown" class="dropdown-menu">
+                <button onclick="openModal('addProductModal')">➕ Добавить товар</button>
+                <button class="delete-opt" onclick="openModal('deleteProductModal')">🗑️ Удалить товар</button>
+            </div>
+        </div>
+
+        <h2 style="margin-bottom: 15px;">Товары на складе</h2>
+        
+        <div style="max-height: 320px; overflow-y: auto; margin-bottom: 15px; border: 1px solid var(--input-border); border-radius: 12px;">
+            <table style="width: 100%; border-collapse: collapse; text-align: left;">
+                <thead>
+                    <tr style="background: var(--input-bg); border-bottom: 1px solid var(--border-color); font-size: 11px; color: var(--text-muted);">
+                        <th style="padding: 10px;">Товар</th>
+                        <th style="padding: 10px;">Категория</th>
+                        <th style="padding: 10px;">Район (Город)</th>
+                        <th style="padding: 10px;">Цена</th>
+                        <th style="padding: 10px;">Статус</th>
+                        <th style="padding: 10px;">Добавлен</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {rows_html}
+                </tbody>
+            </table>
+        </div>
+
+        <a href='/dashboard' class='logout' style='background: #0284c7; color: #fff; border: none; text-decoration: none;'>← В дашборд</a>
+
+        <!-- Модалка: Добавление товара -->
+        <div id="addProductModal" class="modal">
+            <div class="modal-content">
+                <h3 style="color: #38bdf8; font-size: 15px; margin-bottom: 12px;">Добавить товар</h3>
+                <form method="POST" action="/add-product" onsubmit="return showHolo(this)">
+                    <select name="category" required><option value="" disabled selected>Категория</option>{cat_options}</select>
+                    <select name="city" required><option value="" disabled selected>Город</option>{city_options}</select>
+                    <select name="district" required><option value="" disabled selected>Район</option>{district_options}</select>
+                    <input type="text" name="product_name" placeholder="Название товара" required>
+                    <input type="number" step="0.01" name="price" placeholder="Цена ($)" required>
+                    <input type="number" name="stock" placeholder="Количество (шт.)" value="1" min="1" required>
+                    <input type="url" name="product_link" placeholder="Ссылка выдачи после покупки">
+                    <button type="submit">Сохранить товар</button>
+                </form>
+                <button type="button" onclick="closeModal('addProductModal')" style="width: 100%; margin-top: 8px; background: transparent; border: 1px solid var(--border-color); color: var(--text-muted); padding: 10px; border-radius: 10px; cursor: pointer;">Отмена</button>
+            </div>
+        </div>
+
+        <!-- Модалка: Удаление товара -->
+        <div id="deleteProductModal" class="modal">
+            <div class="modal-content">
+                <h3 style="color: #ef4444; font-size: 15px; margin-bottom: 12px;">Удалить товар</h3>
+                <form method="POST" action="/delete-product" onsubmit="return showHolo(this)">
+                    <select name="product_id" required style="border-color: rgba(239, 68, 68, 0.4);">
+                        <option value="" disabled selected>Выберите товар</option>
+                        {delete_product_options}
+                    </select>
+                    <button type="submit" style="background: linear-gradient(135deg, #ef4444, #dc2626); box-shadow: 0 4px 15px rgba(239,68,68,0.4);">Удалить</button>
+                </form>
+                <button type="button" onclick="closeModal('deleteProductModal')" style="width: 100%; margin-top: 8px; background: transparent; border: 1px solid var(--border-color); color: var(--text-muted); padding: 10px; border-radius: 10px; cursor: pointer;">Отмена</button>
+            </div>
+        </div>
     """
     return get_page(content, show_full_nav=True)
 
@@ -1209,13 +1293,84 @@ async def add_product(request: Request, category: str = Form(...), city: str = F
     if request.cookies.get("auth") != "true":
         return RedirectResponse(url="/", status_code=303)
 
+    now_time = datetime.now().strftime("%Y-%m-%d %H:%M")
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO products (category, city, district, name, price, stock, product_link) VALUES (?, ?, ?, ?, ?, ?, ?)", 
-                   (category.strip(), city.strip(), district.strip(), product_name.strip(), price, stock, product_link.strip()))
+    cursor.execute("""
+        INSERT INTO products (category, city, district, name, price, stock, product_link, created_at) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (category.strip(), city.strip(), district.strip(), product_name.strip(), price, stock, product_link.strip(), now_time))
     conn.commit()
     conn.close()
     return RedirectResponse(url="/products", status_code=303)
+
+@app.post("/delete-product", response_class=HTMLResponse)
+async def delete_product(request: Request, product_id: int = Form(...)):
+    if request.cookies.get("auth") != "true":
+        return RedirectResponse(url="/", status_code=303)
+
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM products WHERE id = ?", (product_id,))
+    conn.commit()
+    conn.close()
+    return RedirectResponse(url="/products", status_code=303)
+
+
+# ==================== ИСТОРИЯ ПОКУПОК (ПРОДАНО) ====================
+@app.get("/purchases-history", response_class=HTMLResponse)
+async def purchases_history_page(request: Request):
+    if request.cookies.get("auth") != "true":
+        return RedirectResponse(url="/", status_code=303)
+
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT product_name, price, district, created_at, sold_at, full_name, username, user_id 
+        FROM purchases ORDER BY id DESC
+    """)
+    purchases = cursor.fetchall()
+    conn.close()
+
+    history_rows = "".join([f"""
+        <tr style="border-bottom: 1px solid var(--input-border); font-size: 12px;">
+            <td style="padding: 10px;">
+                <b>{p[0]}</b><br>
+                <span style="color: #38bdf8;">${p[1]}</span> | <span style="color: var(--text-muted);">{p[2]}</span>
+            </td>
+            <td style="padding: 10px;">
+                <b>{p[5]}</b><br>
+                <span style="color: #4ade80;">{p[6]}</span> <span style="color: var(--text-muted);">(ID: {p[7]})</span>
+            </td>
+            <td style="padding: 10px; color: var(--text-muted);">
+                ➕ Добавлен: {p[3]}<br>
+                🛒 Продан: <b style="color: #fca5a5;">{p[4]}</b>
+            </td>
+        </tr>
+    """ for p in purchases]) if purchases else '<tr><td colspan="3" style="text-align: center; padding: 25px; color: var(--text-muted); font-size: 12px;">История покупок пуста</td></tr>'
+
+    content = f"""
+        <h2 style="margin-bottom: 15px;">📜 История покупок</h2>
+        
+        <div style="max-height: 380px; overflow-y: auto; margin-bottom: 15px; border: 1px solid var(--input-border); border-radius: 12px;">
+            <table style="width: 100%; border-collapse: collapse; text-align: left;">
+                <thead>
+                    <tr style="background: var(--input-bg); border-bottom: 1px solid var(--border-color); font-size: 11px; color: var(--text-muted);">
+                        <th style="padding: 10px;">Товар / Цена / Район</th>
+                        <th style="padding: 10px;">Покупатель (Юзер)</th>
+                        <th style="padding: 10px;">Таймстампы (Даты)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {history_rows}
+                </tbody>
+            </table>
+        </div>
+
+        <a href='/dashboard' class='logout' style='background: #0284c7; color: #fff; border: none; text-decoration: none;'>← В дашборд</a>
+    """
+    return get_page(content, show_full_nav=True)
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
