@@ -21,7 +21,7 @@ def init_db():
     cursor.execute("CREATE TABLE IF NOT EXISTS districts (city TEXT, district TEXT PRIMARY KEY, items INTEGER DEFAULT 0, usd REAL DEFAULT 0, ltc REAL DEFAULT 0)")
     cursor.execute("CREATE TABLE IF NOT EXISTS categories (name TEXT PRIMARY KEY)")
     
-    # Таблица товаров с добавлением веса (weight) и времени создания (created_at)
+    # Таблица товаров
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS products (
             id INTEGER PRIMARY KEY AUTOINCREMENT, 
@@ -880,27 +880,28 @@ async def clients_page(request: Request):
         ranks_options = "".join([f'<option value="{r}" {"selected" if r == u_rank else ""}>{r}</option>' for r in ranks_list])
         ban_btn_text = "🟢 Разблокировать" if u_banned == 1 else "🔴 Заблокировать"
         ban_action = f"/api/clients/{u_id}/toggle-ban"
+        ban_btn_color = "rgba(74, 222, 128, 0.15)" if u_banned == 1 else "rgba(239, 68, 68, 0.15)"
+        ban_text_color = "#4ade80" if u_banned == 1 else "#fca5a5"
 
         list_html += f"""
-        <div style="display: flex; align-items: center; gap: 12px; background: var(--input-bg); padding: 10px 12px; border-radius: 10px; margin-bottom: 8px; border: 1px solid var(--input-border); position: relative;">
-            <img src="{u_avatar}" alt="Avatar" style="width: 38px; height: 38px; border-radius: 50%; object-fit: cover; border: 1px solid #38bdf8; flex-shrink: 0;">
-            <div style="flex-grow: 1; overflow: hidden;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
-                    <span style="font-size: 13px; font-weight: 600; color: #f8fafc;">{u_fname or 'Без имени'}</span>
-                    <span style="font-size: 11px; color: {badge_color};">{badge_text}</span>
+        <div style="background: var(--input-bg); padding: 12px; border-radius: 12px; margin-bottom: 10px; border: 1px solid var(--input-border);">
+            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 10px;">
+                <img src="{u_avatar}" alt="Avatar" style="width: 42px; height: 42px; border-radius: 50%; object-fit: cover; border: 1px solid #38bdf8; flex-shrink: 0;">
+                <div style="flex-grow: 1; overflow: hidden;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                        <span style="font-size: 13px; font-weight: 600; color: #f8fafc;">{u_fname or 'Без имени'}</span>
+                        <span style="font-size: 11px; color: {badge_color}; font-weight: 600;">{badge_text}</span>
+                    </div>
+                    <div style="font-size: 10px; color: var(--text-muted);">ID: {u_id} | Юзер: {u_uname}</div>
+                    {f'<div style="font-size: 11px; color: #38bdf8; margin-top: 4px;">📝 Заметка: {u_notes}</div>' if u_notes else ''}
                 </div>
-                <div style="font-size: 10px; color: var(--text-muted);">ID: {u_id} | Юзер: {u_uname}</div>
-                {f'<div style="font-size: 10px; color: #38bdf8; margin-top: 2px;">📝 Заметка: {u_notes}</div>' if u_notes else ''}
             </div>
-            
-            <div style="position: relative;">
-                <button onclick="toggleDropdown('drop_{u_id}')" style="background: transparent; border: none; color: var(--text-muted); font-size: 18px; cursor: pointer; padding: 4px 8px;">⋮</button>
-                <div id="drop_{u_id}" class="dropdown-menu" style="right: 0; top: 30px; width: 150px;">
-                    <button onclick="openModal('modal_{u_id}')">✏️ Изменить</button>
-                    <form method="POST" action="{ban_action}" onsubmit="return showHolo(this)">
-                        <button type="submit" style="color: {'#4ade80' if u_banned == 1 else '#ef4444'};">{ban_btn_text}</button>
-                    </form>
-                </div>
+
+            <div style="display: flex; gap: 8px;">
+                <button onclick="openModal('modal_{u_id}')" style="flex: 1; background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.3); color: #38bdf8; padding: 8px; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer;">⚙️ Изменить</button>
+                <form method="POST" action="{ban_action}" onsubmit="return showHolo(this)" style="flex: 1; margin: 0;">
+                    <button type="submit" style="width: 100%; background: {ban_btn_color}; border: 1px solid {ban_text_color}; color: {ban_text_color}; padding: 8px; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer;">{ban_btn_text}</button>
+                </form>
             </div>
         </div>
 
@@ -926,7 +927,7 @@ async def clients_page(request: Request):
 
     content = f"""
         <div style="text-align:center; margin-bottom: 14px;"><h2>Клиентская база ({len(users)})</h2></div>
-        <div style="max-height: 380px; overflow-y: auto; margin-bottom: 14px; padding-right: 4px;">{list_html}</div>
+        <div style="max-height: 400px; overflow-y: auto; margin-bottom: 14px; padding-right: 4px;">{list_html}</div>
         <a href='/dashboard' class='logout' style='background: #0284c7; color: #fff; border: none; text-decoration: none;'>← В дашборд</a>
     """
     return get_page(content, show_full_nav=True)
